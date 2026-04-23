@@ -18,10 +18,15 @@ hist_df = get_data().groupby('date')[['revenue', 'operating_income']].sum().rese
 
 st.sidebar.markdown("### What-If Parameters")
 st.sidebar.caption("Adjust to see impact on baseline forecast")
+target_metric = st.sidebar.selectbox(
+    "Target Metric to Forecast", 
+    ['revenue', 'operating_income', 'gross_profit', 'net_income', 'customers'],
+    format_func=lambda x: x.replace('_', ' ').title()
+)
 forecast_months = st.sidebar.slider("Forecast Horizon (Months)", 3, 24, 12)
 
 # Scenario inputs
-scen_growth = st.sidebar.number_input("Scenario M-o-M Growth Rate (%)", value=1.5, step=0.1) / 100.0
+scen_growth = st.sidebar.number_input(f"Scenario M-o-M Growth Rate (%)", value=1.5, step=0.1) / 100.0
 scen_margin_adj = st.sidebar.slider("Scenario Operating Margin Adj (%)", -5.0, 5.0, 0.0) / 100.0
 
 # --- Simple Exponential Smoothing for Baseline Forecasting ---
@@ -59,10 +64,12 @@ def run_monte_carlo(last_val, growth_rate, volatility, periods=12, trials=1000):
     return np.array(all_trials)
 
 # Baseline Volatility from historical data
-hist_vol = hist_df['revenue'].pct_change().std()
+hist_vol = hist_df[target_metric].pct_change().std()
 
 # Run Simulation
-mc_results = run_monte_carlo(hist_df['revenue'].iloc[-1], scen_growth, hist_vol, periods=forecast_months)
+last_historical_val = hist_df[target_metric].iloc[-1]
+mc_results = run_monte_carlo(last_historical_val, scen_growth, hist_vol, periods=forecast_months)
+
 mc_median = np.median(mc_results, axis=0)
 mc_upper = np.percentile(mc_results, 95, axis=0)
 mc_lower = np.percentile(mc_results, 5, axis=0)
@@ -75,19 +82,20 @@ with col1:
     fig = go.Figure()
     
     # Historical
-    fig.add_trace(go.Scatter(x=hist_df['date'], y=hist_df['revenue'], mode='lines', name='Historical Revenue', line=dict(color='#3b82f6', width=3)))
+    fig.add_trace(go.Scatter(x=hist_df['date'], y=hist_df[target_metric], mode='lines', name=f'Historical {target_metric.title()}', line=dict(color='#118DFF', width=3)))
     
     # Monte Carlo Confidence Bands
     fig.add_trace(go.Scatter(x=future_dates, y=mc_upper, mode='lines', line=dict(width=0), showlegend=False, name='95% CI Upper'))
-    fig.add_trace(go.Scatter(x=future_dates, y=mc_lower, mode='lines', line=dict(width=0), fill='tonexty', fillcolor='rgba(16, 185, 129, 0.1)', name='95% Confidence Interval'))
+    fig.add_trace(go.Scatter(x=future_dates, y=mc_lower, mode='lines', line=dict(width=0), fill='tonexty', fillcolor='rgba(26, 171, 64, 0.1)', name='95% Confidence Interval'))
     
     fig.add_trace(go.Scatter(x=future_dates, y=mc_mid_upper, mode='lines', line=dict(width=0), showlegend=False, name='50% CI Upper'))
-    fig.add_trace(go.Scatter(x=future_dates, y=mc_mid_lower, mode='lines', line=dict(width=0), fill='tonexty', fillcolor='rgba(16, 185, 129, 0.2)', name='Interquartile Range (50%)'))
+    fig.add_trace(go.Scatter(x=future_dates, y=mc_mid_lower, mode='lines', line=dict(width=0), fill='tonexty', fillcolor='rgba(26, 171, 64, 0.2)', name='Interquartile Range (50%)'))
 
     # Probabilistic Median (Scen Validation)
-    fig.add_trace(go.Scatter(x=future_dates, y=mc_median, mode='lines', name='Monte Carlo Median', line=dict(color='#10b981', width=3)))
+    fig.add_trace(go.Scatter(x=future_dates, y=mc_median, mode='lines', name='Monte Carlo Median', line=dict(color='#1AAB40', width=3)))
     
-    fig.update_layout(title="Probabilistic Revenue Forecast (1,000 Trials)", yaxis_tickprefix="$", **apply_chart_theme())
+    prefix = "$" if target_metric != 'customers' else ""
+    fig.update_layout(title=f"Probabilistic {target_metric.replace('_', ' ').title()} Forecast (1,000 Trials)", yaxis_tickprefix=prefix, **apply_chart_theme())
     st.plotly_chart(fig, use_container_width=True)
 
 with col2:
@@ -101,7 +109,7 @@ with col2:
     st.markdown("---")
     st.markdown("### 💡 Analyst Insight")
     if scen_growth > 0.015:
-        st.success(f"High-growth scenario: Probabilistic median indicates **${mc_median[-1]/1e6:.1f}M** revenue. 95% confidence ceiling at **${mc_upper[-1]/1e6:.1f}M**.")
+        st.success(f"High-growth scenario: Probabilistic median indicates **{prefix}{mc_median[-1]/1e6:.1f}M** terminal scale. 95% confidence ceiling at **{prefix}{mc_upper[-1]/1e6:.1f}M**.")
     else:
         st.info("The forecast bands represent the probability distribution based on 1,000 historical volatility simulations.")
 
