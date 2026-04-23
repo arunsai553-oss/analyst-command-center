@@ -14,7 +14,6 @@ def get_data():
     3. Synthetic data (fallback)
     Returns a KPI-enriched DataFrame.
     """
-    from utils import load_and_generate_data, calculate_kpis
     if 'uploaded_df' in st.session_state and st.session_state['uploaded_df'] is not None:
         return calculate_kpis(st.session_state['uploaded_df'])
     return calculate_kpis(load_and_generate_data())
