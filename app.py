@@ -80,6 +80,18 @@ with st.spinner("Initializing Data Engine..."):
     raw_df = load_and_generate_data()
     df = calculate_kpis(raw_df)
 
+# Slice most recent vs prior period
+dates = sorted(df['date'].unique())
+latest_date = dates[-1]
+prev_date = dates[-2]
+latest_data = df[df['date'] == latest_date]
+prev_data = df[df['date'] == prev_date]
+
+# Revenue MoM
+total_revenue = latest_data['revenue'].sum()
+prev_revenue = prev_data['revenue'].sum()
+rev_delta = (total_revenue - prev_revenue) / prev_revenue
+
 # Returns & Valuation
 avg_roe = latest_data['roe_%'].mean()
 prev_roe = prev_data['roe_%'].mean()
