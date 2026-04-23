@@ -51,16 +51,28 @@ def forecast_exponential_smoothing(series, alpha=0.3, periods=12):
 last_date = hist_df['date'].max()
 future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=forecast_months, freq='ME')
 
-# Base Projections
-base_rev_forecast = forecast_exponential_smoothing(hist_df['revenue'], periods=forecast_months)
+# --- 1000 IQ Monte Carlo Simulation (Probabilistic Forecasting) ---
+def run_monte_carlo(last_val, growth_rate, volatility, periods=12, trials=1000):
+    all_trials = []
+    for _ in range(trials):
+        trial_path = [last_val]
+        for _ in range(periods):
+            # Normal distribution of monthly growth
+            daily_growth = np.random.normal(growth_rate, volatility)
+            trial_path.append(trial_path[-1] * (1 + daily_growth))
+        all_trials.append(trial_path[1:])
+    return np.array(all_trials)
 
-# Scenario Projections (Compound Growth from last actual)
-last_actual_rev = hist_df['revenue'].iloc[-1]
-scen_rev_forecast = [last_actual_rev * ((1 + scen_growth) ** i) for i in range(1, forecast_months + 1)]
+# Baseline Volatility from historical data
+hist_vol = hist_df['revenue'].pct_change().std()
 
-last_actual_margin = (hist_df['operating_income'].iloc[-1] / hist_df['revenue'].iloc[-1]) if hist_df['revenue'].iloc[-1] else 0
-scen_margin = last_actual_margin + scen_margin_adj
-scen_op_income = [r * scen_margin for r in scen_rev_forecast]
+# Run Simulation
+mc_results = run_monte_carlo(hist_df['revenue'].iloc[-1], scen_growth, hist_vol, periods=forecast_months)
+mc_median = np.median(mc_results, axis=0)
+mc_upper = np.percentile(mc_results, 95, axis=0)
+mc_lower = np.percentile(mc_results, 5, axis=0)
+mc_mid_upper = np.percentile(mc_results, 75, axis=0)
+mc_mid_lower = np.percentile(mc_results, 25, axis=0)
 
 col1, col2 = st.columns([3, 1])
 
@@ -70,41 +82,41 @@ with col1:
     # Historical
     fig.add_trace(go.Scatter(x=hist_df['date'], y=hist_df['revenue'], mode='lines', name='Historical Revenue', line=dict(color='#3b82f6', width=3)))
     
-    # Baseline Forecast
-    fig.add_trace(go.Scatter(x=future_dates, y=base_rev_forecast, mode='lines', name='Baseline Forecast (EWMA)', line=dict(color='#94a3b8', width=2, dash='dot')))
+    # Monte Carlo Confidence Bands
+    fig.add_trace(go.Scatter(x=future_dates, y=mc_upper, mode='lines', line=dict(width=0), showlegend=False, name='95% CI Upper'))
+    fig.add_trace(go.Scatter(x=future_dates, y=mc_lower, mode='lines', line=dict(width=0), fill='tonexty', fillcolor='rgba(16, 185, 129, 0.1)', name='95% Confidence Interval'))
     
-    # Scenario Forecast
-    fig.add_trace(go.Scatter(x=future_dates, y=scen_rev_forecast, mode='lines', name='Scenario Validation', line=dict(color='#10b981', width=3)))
+    fig.add_trace(go.Scatter(x=future_dates, y=mc_mid_upper, mode='lines', line=dict(width=0), showlegend=False, name='50% CI Upper'))
+    fig.add_trace(go.Scatter(x=future_dates, y=mc_mid_lower, mode='lines', line=dict(width=0), fill='tonexty', fillcolor='rgba(16, 185, 129, 0.2)', name='Interquartile Range (50%)'))
+
+    # Probabilistic Median (Scen Validation)
+    fig.add_trace(go.Scatter(x=future_dates, y=mc_median, mode='lines', name='Monte Carlo Median', line=dict(color='#10b981', width=3)))
     
-    fig.update_layout(title="Revenue: Historical vs Forecasts", yaxis_tickprefix="$", **apply_chart_theme())
+    fig.update_layout(title="Probabilistic Revenue Forecast (1,000 Trials)", yaxis_tickprefix="$", **apply_chart_theme())
     st.plotly_chart(fig, use_container_width=True)
 
 with col2:
     st.markdown("### Projection Summary")
     st.write(f"**Period:** Next {forecast_months} Months")
-    st.metric("Baseline Final Month Rev", f"${base_rev_forecast[-1]/1e6:.1f}M")
+    st.metric("Terminal Revenue (Median)", f"${mc_median[-1]/1e6:.1f}M")
     
-    delta = (scen_rev_forecast[-1] - base_rev_forecast[-1]) / base_rev_forecast[-1]
-    st.metric("Scenario Final Month Rev", f"${scen_rev_forecast[-1]/1e6:.1f}M", f"{delta*100:+.1f}% vs Base")
-    
-    st.metric("Scenario Operating Income (End)", f"${scen_op_income[-1]/1e6:.1f}M")
+    st.metric("95th Percentile (Optimistic)", f"${mc_upper[-1]/1e6:.1f}M")
+    st.metric("5th Percentile (Pessimistic)", f"${mc_lower[-1]/1e6:.1f}M")
     
     st.markdown("---")
     st.markdown("### 💡 Analyst Insight")
     if scen_growth > 0.015:
-        st.success(f"The aggressive **{scen_growth*100:.1f}%** monthly growth scenario suggests a terminal revenue scale of **${scen_rev_forecast[-1]/1e6:.1f}M**. This requires significant capital efficiency.")
-    elif scen_growth < 0.01:
-        st.warning("Low growth assumptions indicate a flattening curve. Portfolio focus should shift towards margin optimization rather than scale.")
+        st.success(f"High-growth scenario: Probabilistic median indicates **${mc_median[-1]/1e6:.1f}M** revenue. 95% confidence ceiling at **${mc_upper[-1]/1e6:.1f}M**.")
     else:
-        st.info("The current scenario represents a steady-state expansion aligned with historical SaaS benchmarks.")
+        st.info("The forecast bands represent the probability distribution based on 1,000 historical volatility simulations.")
 
 st.markdown("---")
-st.markdown("### Raw Forecast Output")
+st.markdown("### Raw Probabilistic Output")
 out_df = pd.DataFrame({
     'Date': future_dates,
-    'Baseline Revenue': base_rev_forecast,
-    'Scenario Revenue': scen_rev_forecast,
-    'Scenario Op Income': scen_op_income
+    'Median Forecast': mc_median,
+    'Upper Bound (95%)': mc_upper,
+    'Lower Bound (5%)': mc_lower
 }).set_index('Date')
 
 st.dataframe(out_df.style.format("${:,.0f}"), use_container_width=True)

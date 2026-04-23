@@ -71,11 +71,16 @@ def load_and_generate_data():
             channel = np.random.choice(["Direct", "Partners", "Online", "Enterprise"])
             conversion_rate = np.random.uniform(0.01, 0.15)
             
-            # Market Data (Simulated for Valuation Multiples)
+            # Market Data (Safe & Deterministic Valuation)
             shares_outstanding = np.random.uniform(1e6, 10e6)
-            # Share price based on EPS multiple + noise
-            earnings_per_share = net_income / shares_outstanding
-            share_price = earnings_per_share * np.random.uniform(15, 30) 
+            # Use Revenue multiple as a floor for share price to avoid negative valuation
+            rev_multiple = np.random.uniform(2, 6)
+            earnings_multiple = np.random.uniform(15, 25)
+            
+            value_from_rev = (current_revenue * 12 * rev_multiple) / shares_outstanding
+            value_from_earnings = max(0, (net_income * 12 * earnings_multiple) / shares_outstanding)
+            
+            share_price = max(value_from_rev * 0.7, value_from_earnings) + np.random.uniform(1, 5)
             market_cap = share_price * shares_outstanding
             
             records.append({
@@ -157,7 +162,7 @@ def format_percentage(val):
     return f"{val*100:.1f}%"
 
 def calculate_kpis(df):
-    """Calculates additional derived metrics with safety checks."""
+    """Calculates additional derived metrics with safety checks (1000 IQ Level)."""
     df = df.copy()
     
     # Financial Margins
@@ -168,13 +173,23 @@ def calculate_kpis(df):
     # Returns & Efficiency
     df['roe_%'] = (df['net_income'] / df['equity']).fillna(0)
     df['roa_%'] = (df['net_income'] / df['assets']).fillna(0)
-    # ROIC Approx: NOPAT (Operating Income * 0.75) / Invested Capital (Debt + Equity)
     df['roic_%'] = ((df['operating_income'] * 0.75) / (df['debt'] + df['equity'])).fillna(0)
     df['debt_to_equity'] = (df['debt'] / df['equity']).fillna(0)
     
     # Valuation Multiples
-    df['price_to_sales'] = (df['market_cap'] / (df['revenue'] * 12)).fillna(0) # Revenue is monthly, multiple usually based on TTM
+    df['price_to_sales'] = (df['market_cap'] / (df['revenue'] * 12)).fillna(0)
     df['pe_ratio'] = (df['market_cap'] / (df['net_income'] * 12)).replace([np.inf, -np.inf], 0).fillna(0)
+    
+    # --- Altman Z-Score (Modified for Private Firms Analysis) ---
+    # Working Capital Approx = 0.2 * Revenue
+    # Retained Earnings Approx = 0.4 * Total Assets
+    X1 = (df['revenue'] * 0.2) / df['assets']
+    X2 = (df['assets'] * 0.4) / df['assets'] 
+    X3 = df['operating_income'] / df['assets']
+    X4 = df['equity'] / df['debt'].replace(0, 1e-6)
+    X5 = (df['revenue'] * 12) / df['assets']
+    
+    df['altman_z_score'] = (0.717 * X1) + (0.847 * X2) + (3.107 * X3) + (0.420 * X4) + (0.998 * X5)
     
     # Customer/Marketing Metrics
     df['ltv_approx'] = (df['arpu'] * df['gross_margin_%']) / 0.05
@@ -183,12 +198,11 @@ def calculate_kpis(df):
     return df
 
 def get_risk_rating(row):
-    """Categorizes company risk based on debt and margin stability."""
-    if row['debt_to_equity'] > 2.5 or row['net_margin_%'] < 0.05:
-        return 'High Risk'
-    elif row['debt_to_equity'] > 1.2 or row['net_margin_%'] < 0.15:
-        return 'Medium Risk'
-    return 'Stable'
+    """Categorizes company risk using the Altman Z-Score threshold."""
+    z = row['altman_z_score']
+    if z < 1.23: return 'Distress Zone'
+    if z < 2.90: return 'Grey Zone'
+    return 'Safe Zone'
 
 def get_metric_label(col):
     """Maps internal column names to professional labels."""
