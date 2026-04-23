@@ -36,7 +36,9 @@ with col1:
     if len(corr_cols) > 1:
         corr_matrix = df[corr_cols].corr()
         fig = px.imshow(corr_matrix, text_auto=True, color_continuous_scale='RdBu_r', aspect="auto")
-        fig.update_layout(**apply_chart_theme(), margin=dict(l=20, r=20, t=40, b=20))
+        theme = apply_chart_theme()
+        theme['margin'] = dict(l=20, r=20, t=40, b=20)  # Override margin for compact view
+        fig.update_layout(**theme)
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.warning("Select at least 2 variables for correlation.")
