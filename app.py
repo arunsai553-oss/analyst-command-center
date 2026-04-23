@@ -80,34 +80,44 @@ with st.spinner("Initializing Data Engine..."):
     raw_df = load_and_generate_data()
     df = calculate_kpis(raw_df)
 
-# Show high-level metrics for the most recent month vs prior
-dates = sorted(df['date'].unique())
-latest_date = dates[-1]
-prev_date = dates[-2]
-
-latest_data = df[df['date'] == latest_date]
-prev_data = df[df['date'] == prev_date]
-
-# Revenue
-total_revenue = latest_data['revenue'].sum()
-prev_revenue = prev_data['revenue'].sum()
-rev_delta = (total_revenue - prev_revenue) / prev_revenue
-
-# Margin
-avg_margin = latest_data['gross_margin_%'].mean()
-prev_margin = prev_data['gross_margin_%'].mean()
-margin_delta = avg_margin - prev_margin
-
-# ROE
+# Returns & Valuation
 avg_roe = latest_data['roe_%'].mean()
 prev_roe = prev_data['roe_%'].mean()
 roe_delta = avg_roe - prev_roe
 
+avg_pe = latest_data['pe_ratio'].mean()
+avg_roic = latest_data['roic_%'].mean()
+
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Global Monthly Revenue", f"${total_revenue/1e6:.1f}M", f"{rev_delta*100:+.1f}% MoM")
-m2.metric("Avg Gross Margin", f"{avg_margin*100:.1f}%", f"{margin_delta*100:+.1f}% MoM")
-m3.metric("Avg Return on Equity", f"{avg_roe*100:.1f}%", f"{roe_delta*100:+.1f}% MoM")
-m4.metric("Companies Tracked", len(latest_data['company'].unique()), "Active")
+m2.metric("Avg Portfolio ROE", f"{avg_roe*100:.1f}%", f"{roe_delta*100:+.1f}% MoM")
+m3.metric("Avg ROIC (Projected)", f"{avg_roic*100:.1f}%", "Efficient" if avg_roic > 0.1 else "Capital Heavy")
+m4.metric("Avg P/E Ratio", f"{avg_pe:.1f}x", "Market Standard")
+
+st.write("---")
+
+col_radar, col_df = st.columns([1, 1])
+
+with col_radar:
+    st.markdown("### 🎯 Portfolio Risk Radar")
+    from utils import get_risk_rating, apply_chart_theme
+    import plotly.express as px
+    
+    # Calculate risk for latest period
+    radar_df = latest_data.copy()
+    radar_df['Risk'] = radar_df.apply(get_risk_rating, axis=1)
+    
+    fig_radar = px.scatter(radar_df, x="debt_to_equity", y="net_margin_%", 
+                           color="Risk", size="revenue", hover_name="company",
+                           labels={'debt_to_equity': 'Leverage (D/E)', 'net_margin_%': 'Net Margin (%)'},
+                           color_discrete_map={'High Risk': '#ef4444', 'Medium Risk': '#f59e0b', 'Stable': '#10b981'})
+    fig_radar.update_layout(title="Leverage vs. Profitability", **apply_chart_theme())
+    st.plotly_chart(fig_radar, use_container_width=True)
+
+with col_df:
+    st.markdown("### 🏆 Top 5 Valuations")
+    top_v = latest_data.sort_values('market_cap', ascending=False).head(5)
+    st.table(top_v[['company', 'sector', 'market_cap', 'pe_ratio']].rename(columns={'market_cap': 'Market Cap ($)', 'pe_ratio': 'P/E'}))
 
 st.markdown("### 📊 Raw Dataset Peek")
 st.dataframe(df.head(10), use_container_width=True)

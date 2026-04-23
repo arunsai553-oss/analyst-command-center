@@ -71,6 +71,13 @@ def load_and_generate_data():
             channel = np.random.choice(["Direct", "Partners", "Online", "Enterprise"])
             conversion_rate = np.random.uniform(0.01, 0.15)
             
+            # Market Data (Simulated for Valuation Multiples)
+            shares_outstanding = np.random.uniform(1e6, 10e6)
+            # Share price based on EPS multiple + noise
+            earnings_per_share = net_income / shares_outstanding
+            share_price = earnings_per_share * np.random.uniform(15, 30) 
+            market_cap = share_price * shares_outstanding
+            
             records.append({
                 **comp,
                 "date": date,
@@ -88,7 +95,10 @@ def load_and_generate_data():
                 "cac": cac,
                 "arpu": arpu,
                 "channel": channel,
-                "conversion_rate": conversion_rate
+                "conversion_rate": conversion_rate,
+                "share_price": share_price,
+                "market_cap": market_cap,
+                "shares_outstanding": shares_outstanding
             })
             
     df = pd.DataFrame(records)
@@ -155,17 +165,30 @@ def calculate_kpis(df):
     df['operating_margin_%'] = (df['operating_income'] / df['revenue']).fillna(0)
     df['net_margin_%'] = (df['net_income'] / df['revenue']).fillna(0)
     
-    # Returns
+    # Returns & Efficiency
     df['roe_%'] = (df['net_income'] / df['equity']).fillna(0)
     df['roa_%'] = (df['net_income'] / df['assets']).fillna(0)
+    # ROIC Approx: NOPAT (Operating Income * 0.75) / Invested Capital (Debt + Equity)
+    df['roic_%'] = ((df['operating_income'] * 0.75) / (df['debt'] + df['equity'])).fillna(0)
     df['debt_to_equity'] = (df['debt'] / df['equity']).fillna(0)
     
+    # Valuation Multiples
+    df['price_to_sales'] = (df['market_cap'] / (df['revenue'] * 12)).fillna(0) # Revenue is monthly, multiple usually based on TTM
+    df['pe_ratio'] = (df['market_cap'] / (df['net_income'] * 12)).replace([np.inf, -np.inf], 0).fillna(0)
+    
     # Customer/Marketing Metrics
-    # Approximate LTV: (ARPU * Gross Margin) / Churn Rate (Assume 5% monthly churn for synthetic data)
     df['ltv_approx'] = (df['arpu'] * df['gross_margin_%']) / 0.05
     df['ltv_to_cac'] = (df['ltv_approx'] / df['cac']).replace([np.inf, -np.inf], 0).fillna(0)
     
     return df
+
+def get_risk_rating(row):
+    """Categorizes company risk based on debt and margin stability."""
+    if row['debt_to_equity'] > 2.5 or row['net_margin_%'] < 0.05:
+        return 'High Risk'
+    elif row['debt_to_equity'] > 1.2 or row['net_margin_%'] < 0.15:
+        return 'Medium Risk'
+    return 'Stable'
 
 def get_metric_label(col):
     """Maps internal column names to professional labels."""
