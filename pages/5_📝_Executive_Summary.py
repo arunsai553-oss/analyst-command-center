@@ -47,13 +47,14 @@ with col1:
     """)
 
 with col2:
-    st.markdown("#### Strategic Recommendations (Template)")
-    st.info("""
+    st.markdown("#### Strategic Recommendations")
+    st.info(f"""
     **To Leadership:**
-    Based on the exploratory analysis and funnel optimization test:
-    1. **Scale the Winner**: Accelerate marketing spend towards the channels performing well for top growers.
-    2. **Implement Features**: Roll out the one-click checkout across all retail domains given the statistically significant lift observed in Q4 tests.
-    3. **Investigate Drag**: Open an operational review for the bottom quartile companies failing to meet baseline margin assumptions.
+    Based on the latest portfolio signals:
+    1. **Scale the Winner**: Accelerate capital allocation towards **{top_grower['company']}** to capitalize on their **{top_grower['growth']*100:.1f}%** momentum.
+    2. **Operational Recovery**: Initiate an urgent performance audit for **{bottom_grower['company']}** to address the recent **{bottom_grower['growth']*100:.1f}%** drag.
+    3. **Go-to-Market (GTM)**: Review acquisition channels for companies with CAC exceeding **${latest_data['cac'].mean()*1.2:.2f}** (20% above portfolio average).
+    4. **Funnel UX**: Roll out the one-click checkout verified in Q4 experiments to all high-traffic retail segments.
     """)
 
 st.write("---")

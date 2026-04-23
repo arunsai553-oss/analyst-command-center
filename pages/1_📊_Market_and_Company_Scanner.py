@@ -7,7 +7,7 @@ import os
 
 # Ensure utils can be imported when running from pages/
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_and_generate_data, calculate_kpis, apply_chart_theme, format_currency
+from utils import load_and_generate_data, calculate_kpis, apply_chart_theme, format_currency, get_metric_label
 
 st.set_page_config(page_title="Market Scanner", page_icon="📊", layout="wide")
 
@@ -21,11 +21,28 @@ def get_data():
 df = get_data()
 
 # --- Filters ---
-st.sidebar.header("Filters")
+st.sidebar.header("Filter Portfolio")
 sectors = st.sidebar.multiselect("Sectors", options=df['sector'].unique(), default=df['sector'].unique())
+
+available_companies = df[df['sector'].isin(sectors)]['company'].unique()
+companies = st.sidebar.multiselect("Specific Companies", options=available_companies, default=available_companies)
+
 regions = st.sidebar.multiselect("Regions", options=df['region'].unique(), default=df['region'].unique())
 
-filtered_df = df[(df['sector'].isin(sectors)) & (df['region'].isin(regions))]
+# Date Filter
+min_date, max_date = df['date'].min(), df['date'].max()
+date_range = st.sidebar.date_input("Time Horizon", [min_date, max_date], min_value=min_date, max_value=max_date)
+
+# Apply filters
+mask = (
+    (df['sector'].isin(sectors)) & 
+    (df['region'].isin(regions)) & 
+    (df['company'].isin(companies))
+)
+if len(date_range) == 2:
+    mask = mask & (df['date'].dt.date >= date_range[0]) & (df['date'].dt.date <= date_range[1])
+
+filtered_df = df[mask]
 
 if filtered_df.empty:
     st.warning("No data available for the selected filters.")
@@ -53,10 +70,12 @@ with tab1:
         color_col = 'region'
         
     # Plotly Line Chart
-    fig = px.area(chart_data, x="date", y=metric, color=color_col, title=f"{metric.replace('_', ' ').title()} over Time by {agg_level}")
+    fig = px.area(chart_data, x="date", y=metric, color=color_col, 
+                  title=f"{get_metric_label(metric)} Trends by {agg_level}",
+                  labels={metric: get_metric_label(metric), 'date': 'Period', color_col: agg_level})
     fig.update_layout(**apply_chart_theme())
     # If metric is currency
-    if metric != 'customers':
+    if metric in ['revenue', 'gross_profit', 'operating_income', 'net_income']:
         fig.update_layout(yaxis_tickprefix="$")
     st.plotly_chart(fig, use_container_width=True)
     

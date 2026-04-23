@@ -80,19 +80,34 @@ with st.spinner("Initializing Data Engine..."):
     raw_df = load_and_generate_data()
     df = calculate_kpis(raw_df)
 
-# Show high-level metrics for the most recent month
-latest_date = df['date'].max()
-latest_data = df[df['date'] == latest_date]
+# Show high-level metrics for the most recent month vs prior
+dates = sorted(df['date'].unique())
+latest_date = dates[-1]
+prev_date = dates[-2]
 
+latest_data = df[df['date'] == latest_date]
+prev_data = df[df['date'] == prev_date]
+
+# Revenue
 total_revenue = latest_data['revenue'].sum()
+prev_revenue = prev_data['revenue'].sum()
+rev_delta = (total_revenue - prev_revenue) / prev_revenue
+
+# Margin
 avg_margin = latest_data['gross_margin_%'].mean()
+prev_margin = prev_data['gross_margin_%'].mean()
+margin_delta = avg_margin - prev_margin
+
+# ROE
 avg_roe = latest_data['roe_%'].mean()
+prev_roe = prev_data['roe_%'].mean()
+roe_delta = avg_roe - prev_roe
 
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("Global Monthly Revenue", f"${total_revenue/1e6:.1f}M", "+5.2% MoM")
-m2.metric("Avg Gross Margin", f"{avg_margin*100:.1f}%", "-0.3% MoM")
-m3.metric("Avg Return on Equity", f"{avg_roe*100:.1f}%", "+1.1% MoM")
+m1.metric("Global Monthly Revenue", f"${total_revenue/1e6:.1f}M", f"{rev_delta*100:+.1f}% MoM")
+m2.metric("Avg Gross Margin", f"{avg_margin*100:.1f}%", f"{margin_delta*100:+.1f}% MoM")
+m3.metric("Avg Return on Equity", f"{avg_roe*100:.1f}%", f"{roe_delta*100:+.1f}% MoM")
 m4.metric("Companies Tracked", len(latest_data['company'].unique()), "Active")
 
-st.markdown("### Raw Dataset Snapshot")
-st.dataframe(df.head(), use_container_width=True)
+st.markdown("### 📊 Raw Dataset Peek")
+st.dataframe(df.head(10), use_container_width=True)

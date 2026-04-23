@@ -14,7 +14,7 @@ def load_and_generate_data():
     """
     # Try loading from local CSV (in a real scenario)
     try:
-        df = pd.pd.read_csv("data/raw/financials.csv")
+        df = pd.read_csv("data/raw/financials.csv")
         return pd.to_datetime(df['date']), df
     except:
         pass # Generate synthetic data instead
@@ -147,27 +147,55 @@ def format_percentage(val):
     return f"{val*100:.1f}%"
 
 def calculate_kpis(df):
-    """Calculates additional derived metrics."""
+    """Calculates additional derived metrics with safety checks."""
     df = df.copy()
-    df['gross_margin_%'] = df['gross_profit'] / df['revenue']
-    df['operating_margin_%'] = df['operating_income'] / df['revenue']
-    df['net_margin_%'] = df['net_income'] / df['revenue']
-    df['roe_%'] = df['net_income'] / df['equity']
-    df['roa_%'] = df['net_income'] / df['assets']
-    df['debt_to_equity'] = df['debt'] / df['equity']
+    
+    # Financial Margins
+    df['gross_margin_%'] = (df['gross_profit'] / df['revenue']).fillna(0)
+    df['operating_margin_%'] = (df['operating_income'] / df['revenue']).fillna(0)
+    df['net_margin_%'] = (df['net_income'] / df['revenue']).fillna(0)
+    
+    # Returns
+    df['roe_%'] = (df['net_income'] / df['equity']).fillna(0)
+    df['roa_%'] = (df['net_income'] / df['assets']).fillna(0)
+    df['debt_to_equity'] = (df['debt'] / df['equity']).fillna(0)
+    
+    # Customer/Marketing Metrics
     # Approximate LTV: (ARPU * Gross Margin) / Churn Rate (Assume 5% monthly churn for synthetic data)
     df['ltv_approx'] = (df['arpu'] * df['gross_margin_%']) / 0.05
-    df['ltv_to_cac'] = df['ltv_approx'] / df['cac']
+    df['ltv_to_cac'] = (df['ltv_approx'] / df['cac']).replace([np.inf, -np.inf], 0).fillna(0)
+    
     return df
+
+def get_metric_label(col):
+    """Maps internal column names to professional labels."""
+    mapping = {
+        'revenue': 'Revenue',
+        'gross_profit': 'Gross Profit',
+        'operating_income': 'Operating Income',
+        'net_income': 'Net Income',
+        'gross_margin_%': 'Gross Margin (%)',
+        'operating_margin_%': 'Operating Margin (%)',
+        'net_margin_%': 'Net Margin (%)',
+        'roe_%': 'ROE (%)',
+        'roa_%': 'ROA (%)',
+        'cac': 'CAC',
+        'ltv_to_cac': 'LTV to CAC',
+        'arpu': 'ARPU',
+        'customers': 'Total Customers',
+        'conversion_rate': 'Conversion Rate'
+    }
+    return mapping.get(col, col.replace('_', ' ').title())
 
 def apply_chart_theme():
     """Returns a unified chart layout theme dictionary."""
     return dict(
-        template="plotly_dark", # Advanced premium dark mode
+        template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, sans-serif", color="#e2e8f0"),
-        margin=dict(l=40, r=40, t=40, b=40),
+        font=dict(family="Outfit, sans-serif", color="#e2e8f0"),
+        margin=dict(l=40, r=40, t=60, b=40),
         hovermode="x unified",
-        colorway=["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"]
+        colorway=["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444"],
+        title_font=dict(size=20, weight="bold")
     )

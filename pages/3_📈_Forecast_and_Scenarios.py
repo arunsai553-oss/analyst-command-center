@@ -85,9 +85,18 @@ with col2:
     st.metric("Baseline Final Month Rev", f"${base_rev_forecast[-1]/1e6:.1f}M")
     
     delta = (scen_rev_forecast[-1] - base_rev_forecast[-1]) / base_rev_forecast[-1]
-    st.metric("Scenario Final Month Rev", f"${scen_rev_forecast[-1]/1e6:.1f}M", f"{delta*100:.1f}% vs Base")
+    st.metric("Scenario Final Month Rev", f"${scen_rev_forecast[-1]/1e6:.1f}M", f"{delta*100:+.1f}% vs Base")
     
     st.metric("Scenario Operating Income (End)", f"${scen_op_income[-1]/1e6:.1f}M")
+    
+    st.markdown("---")
+    st.markdown("### 💡 Analyst Insight")
+    if scen_growth > 0.015:
+        st.success(f"The aggressive **{scen_growth*100:.1f}%** monthly growth scenario suggests a terminal revenue scale of **${scen_rev_forecast[-1]/1e6:.1f}M**. This requires significant capital efficiency.")
+    elif scen_growth < 0.01:
+        st.warning("Low growth assumptions indicate a flattening curve. Portfolio focus should shift towards margin optimization rather than scale.")
+    else:
+        st.info("The current scenario represents a steady-state expansion aligned with historical SaaS benchmarks.")
 
 st.markdown("---")
 st.markdown("### Raw Forecast Output")
