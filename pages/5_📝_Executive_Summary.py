@@ -4,16 +4,12 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_and_generate_data, calculate_kpis
+from utils import load_and_generate_data, calculate_kpis, get_data
 
 st.set_page_config(page_title="Executive Summary", page_icon="📝", layout="wide")
 
 st.markdown("# 📝 Executive Summary")
 st.markdown("Automated strategic synthesis of portfolio data for leadership.")
-
-@st.cache_data
-def get_data():
-    return calculate_kpis(load_and_generate_data())
 
 df = get_data()
 latest_date = df['date'].max()

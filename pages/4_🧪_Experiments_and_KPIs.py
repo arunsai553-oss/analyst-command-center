@@ -7,26 +7,25 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_experiment_data, apply_chart_theme
+from utils import load_experiment_data, apply_chart_theme, get_data
 
 st.set_page_config(page_title="Experiments & KPIs", page_icon="🧪", layout="wide")
 
 st.markdown("# 🧪 Experiments & KPIs")
 st.markdown("Evaluate A/B tests and extract statistically rigorous insights for product decisions.")
 
-@st.cache_data
-def get_ab_data():
-    return load_experiment_data()
-
-df = get_ab_data()
+# Use main portfolio data for experiment-level KPIs where applicable
+df = get_data()
+# Experiment-specific data (A/B testing synthetic cohorts)
+ab_df = load_experiment_data()
 
 st.sidebar.markdown("### Experiment Parameters")
 st.sidebar.caption("Filter test subjects")
-date_range = st.sidebar.date_input("Filter Date Range", [df['date'].min(), df['date'].max()])
+date_range = st.sidebar.date_input("Filter Date Range", [ab_df['date'].min(), ab_df['date'].max()])
 
 # Filter data
-mask = (df['date'].dt.date >= date_range[0]) & (df['date'].dt.date <= date_range[1])
-filtered_df = df[mask]
+mask = (ab_df['date'].dt.date >= date_range[0]) & (ab_df['date'].dt.date <= date_range[1])
+filtered_df = ab_df[mask]
 
 st.markdown("### 📊 Test Readout: Q4 Checkout Funnel Optimization")
 st.markdown("**Hypothesis**: Introducing a one-click checkout will increase overall conversion rates.")

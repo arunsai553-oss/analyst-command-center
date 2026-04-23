@@ -6,20 +6,15 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_and_generate_data, apply_chart_theme
+from utils import load_and_generate_data, apply_chart_theme, get_data
 
 st.set_page_config(page_title="Forecasting & Scenarios", page_icon="📈", layout="wide")
 
 st.markdown("# 📈 Forecast & Scenarios")
 st.markdown("Project future performance and stress-test assumptions with dynamic scenarios.")
 
-@st.cache_data
-def get_historical_data():
-    df = load_and_generate_data()
-    # Let's do a top-level aggregation for forecasting
-    return df.groupby('date')[['revenue', 'operating_income']].sum().reset_index()
+hist_df = get_data().groupby('date')[['revenue', 'operating_income']].sum().reset_index()
 
-hist_df = get_historical_data()
 
 st.sidebar.markdown("### What-If Parameters")
 st.sidebar.caption("Adjust to see impact on baseline forecast")

@@ -7,18 +7,15 @@ import os
 
 # Ensure utils can be imported when running from pages/
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_and_generate_data, calculate_kpis, apply_chart_theme, format_currency, get_metric_label
+from utils import load_and_generate_data, calculate_kpis, apply_chart_theme, format_currency, get_metric_label, get_data
 
 st.set_page_config(page_title="Market Scanner", page_icon="📊", layout="wide")
 
 st.markdown("# 📊 Market & Company Scanner")
 st.markdown("Filter and drill down into absolute performance and sector-wide macroeconomic trends.")
 
-@st.cache_data
-def get_data():
-    return calculate_kpis(load_and_generate_data())
-
 df = get_data()
+
 
 # --- Filters ---
 st.sidebar.header("Filter Portfolio")

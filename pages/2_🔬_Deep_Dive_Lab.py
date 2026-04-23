@@ -6,18 +6,15 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_and_generate_data, calculate_kpis, apply_chart_theme
+from utils import load_and_generate_data, calculate_kpis, apply_chart_theme, get_data
 
 st.set_page_config(page_title="Deep Dive Lab", page_icon="🔬", layout="wide")
 
 st.markdown("# 🔬 Deep Dive Lab")
 st.markdown("Exploratory Data Analysis (EDA) interface for investigating correlations and multifaceted groups.")
 
-@st.cache_data
-def get_data():
-    return calculate_kpis(load_and_generate_data())
-
 df = get_data()
+
 
 st.sidebar.markdown("### Lab Controls")
 selected_company = st.sidebar.selectbox("Isolate Company (Optional)", ["All"] + list(df['company'].unique()))

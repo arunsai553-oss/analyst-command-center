@@ -6,6 +6,19 @@ import plotly.express as px
 import plotly.graph_objects as go
 from scipy import stats
 
+def get_data():
+    """
+    Master data loader. Priority order:
+    1. User-uploaded CSV (via session_state)
+    2. Local CSV from data/raw/
+    3. Synthetic data (fallback)
+    Returns a KPI-enriched DataFrame.
+    """
+    from utils import load_and_generate_data, calculate_kpis
+    if 'uploaded_df' in st.session_state and st.session_state['uploaded_df'] is not None:
+        return calculate_kpis(st.session_state['uploaded_df'])
+    return calculate_kpis(load_and_generate_data())
+
 @st.cache_data
 def load_and_generate_data():
     """
@@ -15,9 +28,11 @@ def load_and_generate_data():
     # Try loading from local CSV (in a real scenario)
     try:
         df = pd.read_csv("data/raw/financials.csv")
-        return pd.to_datetime(df['date']), df
+        df['date'] = pd.to_datetime(df['date'])
+        return df
     except:
-        pass # Generate synthetic data instead
+        pass  # Generate synthetic data instead
+
         
     np.random.seed(42)
     
@@ -225,14 +240,16 @@ def get_metric_label(col):
     return mapping.get(col, col.replace('_', ' ').title())
 
 def apply_chart_theme():
-    """Returns a unified chart layout theme dictionary."""
+    """Returns a unified chart layout theme dictionary resembling Power BI/Tableau."""
     return dict(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Outfit, sans-serif", color="#e2e8f0"),
+        template="plotly_white",
+        paper_bgcolor="rgba(255,255,255,1)",
+        plot_bgcolor="rgba(255,255,255,1)",
+        font=dict(family="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif", color="#1e293b", size=13),
         margin=dict(l=40, r=40, t=60, b=40),
         hovermode="x unified",
-        colorway=["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444"],
-        title_font=dict(size=20, weight="bold")
+        colorway=["#118DFF", "#12239E", "#E66C37", "#6B007B", "#E044A7", "#744EC2", "#D9B300", "#D64550", "#197278", "#1AAB40"], # Power BI classic palette
+        title_font=dict(size=20, weight="bold", color="#0f172a"),
+        xaxis=dict(showgrid=False, zeroline=False, linecolor='#cbd5e1'),
+        yaxis=dict(showgrid=True, gridcolor='#f1f5f9', zeroline=False, linecolor='#cbd5e1')
     )

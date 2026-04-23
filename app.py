@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
-from utils import load_and_generate_data, calculate_kpis
+import io
+from utils import load_and_generate_data, calculate_kpis, get_data, get_risk_rating, apply_chart_theme
+import plotly.express as px
 
 # Must be the first Streamlit command
 st.set_page_config(
@@ -10,30 +12,51 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for a premium look
+# Custom CSS for a Power BI / Tableau dashboard feel
 st.markdown("""
 <style>
+    /* Power BI light grey background for the app */
+    .stApp {
+        background-color: #f1f5f9;
+    }
     /* Gradient text for main headers */
     .gradient-text {
-        background: -webkit-linear-gradient(45deg, #3b82f6, #8b5cf6);
+        background: -webkit-linear-gradient(45deg, #0284c7, #2563eb);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        font-size: 3rem;
+        font-size: 2.8rem;
         font-weight: 800;
         margin-bottom: 0px;
     }
     .sub-head {
-        font-size: 1.2rem;
-        color: #94a3b8;
+        font-size: 1.1rem;
+        color: #475569;
         margin-top: -10px;
-        margin-bottom: 30px;
+        margin-bottom: 25px;
     }
-    /* Metric styling */
+    
+    /* Power BI / Tableau style metric cards (White with subtle shadow) */
+    div[data-testid="metric-container"] {
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        padding: 15px 20px;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        border-color: #3b82f6;
+    }
+    
     div[data-testid="stMetricValue"] {
-        font-size: 2rem !important;
+        font-size: 2.2rem !important;
         font-weight: 700 !important;
-        color: #e2e8f0 !important;
+        color: #0f172a !important;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
+    
     /* Hide default Streamlit elements for a cleaner look */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
@@ -71,14 +94,72 @@ with col2:
     - **Deployment**: Streamlit Community Cloud.
     """)
 
+# ─────────────────────────────────────────
+# SIDEBAR — Data Connector
+# ─────────────────────────────────────────
+st.sidebar.markdown("## 🔌 Connect Your Data")
+st.sidebar.caption("Upload a CSV with your real financial data to replace the demo dataset.")
+
+uploaded_file = st.sidebar.file_uploader(
+    "Upload CSV", type=["csv"],
+    help="Must have columns: date, company, sector, region, revenue, gross_profit, operating_income, net_income, assets, liabilities, equity, debt, customers, marketing_spend, cac, arpu"
+)
+
+# Required columns for user guidance
+REQUIRED_COLS = [
+    'date', 'company', 'sector', 'region', 'channel',
+    'revenue', 'gross_profit', 'operating_income', 'net_income',
+    'assets', 'liabilities', 'equity', 'debt',
+    'customers', 'orders', 'marketing_spend', 'cac', 'arpu', 'conversion_rate'
+]
+
+if uploaded_file:
+    try:
+        user_df = pd.read_csv(uploaded_file)
+        user_df['date'] = pd.to_datetime(user_df['date'])
+        # Validate required columns
+        missing = [c for c in REQUIRED_COLS if c not in user_df.columns]
+        if missing:
+            st.sidebar.error(f"Missing columns: {', '.join(missing)}")
+        else:
+            # Pad market data columns if not present
+            if 'market_cap' not in user_df.columns:
+                user_df['market_cap'] = user_df['revenue'] * 12 * 3
+                user_df['share_price'] = user_df['market_cap'] / 5e6
+                user_df['shares_outstanding'] = 5e6
+            st.session_state['uploaded_df'] = user_df
+            st.sidebar.success(f"✅ **Live Data Active** — {len(user_df):,} rows loaded")
+    except Exception as e:
+        st.sidebar.error(f"Error reading file: {e}")
+else:
+    st.session_state['uploaded_df'] = None
+    st.sidebar.info("📊 **Demo Mode** — Using synthetic data")
+
+# Template Download
+st.sidebar.markdown("**📥 Need a template?**")
+template_cols = {c: '' for c in REQUIRED_COLS}
+template_df = pd.DataFrame([template_cols])
+template_csv = template_df.to_csv(index=False).encode('utf-8')
+st.sidebar.download_button(
+    label="Download CSV Template",
+    data=template_csv,
+    file_name="analyst_center_template.csv",
+    mime="text/csv"
+)
+st.sidebar.markdown("---")
+
 st.write("---")
 st.markdown("### 🌐 Global High-Level Overview")
-st.caption("Data generated synthetically for demonstration purposes.")
 
-# Pre-load data to ensure generation and provide a sneak peek
+# Data source badge
+if st.session_state.get('uploaded_df') is not None:
+    st.success("🟢 **Live Data Mode** — Charts reflect your uploaded dataset.")
+else:
+    st.caption("Data generated synthetically for demonstration purposes. Upload a CSV in the sidebar to use real data.")
+
+# Load data via master loader (respects uploaded CSV)
 with st.spinner("Initializing Data Engine..."):
-    raw_df = load_and_generate_data()
-    df = calculate_kpis(raw_df)
+    df = get_data()
 
 # Slice most recent vs prior period
 dates = sorted(df['date'].unique())
@@ -122,8 +203,8 @@ with col_radar:
     fig_radar = px.scatter(radar_df, x="debt_to_equity", y="net_margin_%", 
                            color="Risk", size="revenue", hover_name="company",
                            labels={'debt_to_equity': 'Leverage (D/E)', 'net_margin_%': 'Net Margin (%)'},
-                           color_discrete_map={'High Risk': '#ef4444', 'Medium Risk': '#f59e0b', 'Stable': '#10b981'})
-    fig_radar.update_layout(title="Leverage vs. Profitability", **apply_chart_theme())
+                           color_discrete_map={'Distress Zone': '#ef4444', 'Grey Zone': '#f59e0b', 'Safe Zone': '#10b981'})
+    fig_radar.update_layout(title="Leverage vs. Profitability (Altman Z-Score)", **apply_chart_theme())
     st.plotly_chart(fig_radar, use_container_width=True)
 
 with col_df:
@@ -133,3 +214,11 @@ with col_df:
 
 st.markdown("### 📊 Raw Dataset Peek")
 st.dataframe(df.head(10), use_container_width=True)
+
+# Data export from home page too
+st.download_button(
+    "⬇️ Download Full Dataset (CSV)",
+    df.to_csv(index=False).encode('utf-8'),
+    file_name='analyst_command_center_data.csv',
+    mime='text/csv'
+)
