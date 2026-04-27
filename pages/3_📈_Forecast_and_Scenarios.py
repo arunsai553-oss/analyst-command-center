@@ -6,15 +6,16 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_and_generate_data, apply_chart_theme, get_data
+from utils import load_and_generate_data, apply_chart_theme, get_data, get_filtered_data, get_historical_growth
 
 st.set_page_config(page_title="Forecasting & Scenarios", page_icon="📈", layout="wide")
 
 st.markdown("# 📈 Forecast & Scenarios")
 st.markdown("Project future performance and stress-test assumptions with dynamic scenarios.")
 
-hist_df = get_data().groupby('date')[['revenue', 'operating_income']].sum().reset_index()
-
+# Use Filtered Data (Global Sync)
+df = get_filtered_data()
+hist_df = df.groupby('date')[['revenue', 'operating_income', 'gross_profit', 'net_income', 'customers']].sum().reset_index()
 
 st.sidebar.markdown("### What-If Parameters")
 st.sidebar.caption("Adjust to see impact on baseline forecast")
@@ -25,8 +26,17 @@ target_metric = st.sidebar.selectbox(
 )
 forecast_months = st.sidebar.slider("Forecast Horizon (Months)", 3, 24, 12)
 
-# Scenario inputs
-scen_growth = st.sidebar.number_input(f"Scenario M-o-M Growth Rate (%)", value=1.5, step=0.1) / 100.0
+# --- AUTO-CLEAN LOGIC ---
+# Calculate historical growth to seed the scenario automatically
+hist_growth_rate = get_historical_growth(df, target_metric)
+
+# Scenario inputs - seeded with historical baseline for "Clean" experience
+scen_growth = st.sidebar.number_input(
+    f"Scenario M-o-M Growth Rate (%)", 
+    value=float(hist_growth_rate * 100), # Clean: automatically updates to historical reality
+    step=0.1,
+    help="Default is set to the historical average growth of your 'Hooked' data."
+) / 100.0
 scen_margin_adj = st.sidebar.slider("Scenario Operating Margin Adj (%)", -5.0, 5.0, 0.0) / 100.0
 
 # --- Simple Exponential Smoothing for Baseline Forecasting ---

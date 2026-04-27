@@ -6,20 +6,17 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_and_generate_data, calculate_kpis, apply_chart_theme, get_data
+from utils import load_and_generate_data, calculate_kpis, apply_chart_theme, get_data, get_filtered_data
 
 st.set_page_config(page_title="Deep Dive Lab", page_icon="🔬", layout="wide")
 
 st.markdown("# 🔬 Deep Dive Lab")
 st.markdown("Exploratory Data Analysis (EDA) interface for investigating correlations and multifaceted groups.")
 
-df = get_data()
+# Use Global Filtered Data
+df = get_filtered_data()
 
-
-st.sidebar.markdown("### Lab Controls")
-selected_company = st.sidebar.selectbox("Isolate Company (Optional)", ["All"] + list(df['company'].unique()))
-if selected_company != "All":
-    df = df[df['company'] == selected_company]
+st.sidebar.info("💡 **Global Sync Active**: Using filters defined in the Home page sidebar.")
 
 col1, col2 = st.columns(2)
 

@@ -238,6 +238,35 @@ def get_metric_label(col):
     }
     return mapping.get(col, col.replace('_', ' ').title())
 
+def get_filtered_data():
+    """
+    Retrieves the data and applies global filters stored in session state.
+    """
+    df = get_data()
+    
+    # Apply Global Filters if they exist
+    if 'global_sectors' in st.session_state and st.session_state['global_sectors']:
+        df = df[df['sector'].isin(st.session_state['global_sectors'])]
+    
+    if 'global_regions' in st.session_state and st.session_state['global_regions']:
+        df = df[df['region'].isin(st.session_state['global_regions'])]
+        
+    if 'global_companies' in st.session_state and st.session_state['global_companies']:
+        df = df[df['company'].isin(st.session_state['global_companies'])]
+        
+    return df
+
+def get_historical_growth(df, target_metric):
+    """
+    Calculates the average monthly growth rate for a metric to seed the forecast.
+    """
+    try:
+        hist_df = df.groupby('date')[target_metric].sum().reset_index()
+        growth = hist_df[target_metric].pct_change().mean()
+        return float(growth) if not np.isnan(growth) else 0.015
+    except:
+        return 0.015
+
 def apply_chart_theme():
     """Returns a unified chart layout theme dictionary resembling Power BI/Tableau."""
     return dict(

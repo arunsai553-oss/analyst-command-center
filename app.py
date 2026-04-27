@@ -95,7 +95,7 @@ with col2:
     """)
 
 # ─────────────────────────────────────────
-# SIDEBAR — Data Connector
+# SIDEBAR — Global Connect & Filters
 # ─────────────────────────────────────────
 st.sidebar.markdown("## 🔌 Connect Your Data")
 st.sidebar.caption("Upload a CSV with your real financial data to replace the demo dataset.")
@@ -115,6 +115,17 @@ REQUIRED_COLS = [
 
 if uploaded_file:
     try:
+        # Check if this is a NEW file to trigger state cleanup
+        file_id = f"{uploaded_file.name}_{uploaded_file.size}"
+        if st.session_state.get('last_file_id') != file_id:
+            st.session_state['uploaded_df'] = None # Clear old data
+            st.session_state['last_file_id'] = file_id
+            # Trigger full app reset for clean forecast
+            for key in list(st.session_state.keys()):
+                if key not in ['uploaded_df', 'last_file_id']:
+                    del st.session_state[key]
+            st.rerun()
+
         user_df = pd.read_csv(uploaded_file)
         user_df['date'] = pd.to_datetime(user_df['date'])
         # Validate required columns
@@ -128,12 +139,36 @@ if uploaded_file:
                 user_df['share_price'] = user_df['market_cap'] / 5e6
                 user_df['shares_outstanding'] = 5e6
             st.session_state['uploaded_df'] = user_df
-            st.sidebar.success(f"✅ **Live Data Active** — {len(user_df):,} rows loaded")
+            st.sidebar.success(f"✅ **Live Data Active** — {len(user_df):,} rows")
     except Exception as e:
         st.sidebar.error(f"Error reading file: {e}")
 else:
     st.session_state['uploaded_df'] = None
-    st.sidebar.info("📊 **Demo Mode** — Using synthetic data")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("## 🎯 Global Portfolio Filters")
+st.sidebar.caption("Filters apply across all pages instantly")
+
+# Load data to populate filter options
+raw_df = get_data()
+
+st.session_state['global_sectors'] = st.sidebar.multiselect(
+    "Sectors", options=sorted(raw_df['sector'].unique()), 
+    default=st.session_state.get('global_sectors', sorted(raw_df['sector'].unique()))
+)
+
+st.session_state['global_regions'] = st.sidebar.multiselect(
+    "Regions", options=sorted(raw_df['region'].unique()), 
+    default=st.session_state.get('global_regions', sorted(raw_df['region'].unique()))
+)
+
+available_companies = sorted(raw_df[raw_df['sector'].isin(st.session_state['global_sectors'])]['company'].unique())
+st.session_state['global_companies'] = st.sidebar.multiselect(
+    "Companies", options=available_companies, 
+    default=st.session_state.get('global_companies', available_companies)
+)
+
+st.sidebar.markdown("---")
 
 # Template Download
 st.sidebar.markdown("**📥 Need a template?**")
@@ -141,12 +176,11 @@ template_cols = {c: '' for c in REQUIRED_COLS}
 template_df = pd.DataFrame([template_cols])
 template_csv = template_df.to_csv(index=False).encode('utf-8')
 st.sidebar.download_button(
-    label="Download CSV Template",
+    label="Download Template",
     data=template_csv,
     file_name="analyst_center_template.csv",
     mime="text/csv"
 )
-st.sidebar.markdown("---")
 
 st.write("---")
 st.markdown("### 🌐 Global High-Level Overview")
@@ -157,9 +191,10 @@ if st.session_state.get('uploaded_df') is not None:
 else:
     st.caption("Data generated synthetically for demonstration purposes. Upload a CSV in the sidebar to use real data.")
 
-# Load data via master loader (respects uploaded CSV)
+# Load data via master loader (respects global filters)
 with st.spinner("Initializing Data Engine..."):
-    df = get_data()
+    from utils import get_filtered_data
+    df = get_filtered_data()
 
 # Slice most recent vs prior period
 dates = sorted(df['date'].unique())
