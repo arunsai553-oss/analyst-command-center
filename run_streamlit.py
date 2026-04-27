@@ -13,5 +13,5 @@ def safe_get_event_loop():
 asyncio.get_event_loop = safe_get_event_loop
 
 from streamlit.web.cli import main
-sys.argv = ["streamlit", "run", "app.py", "--server.headless", "true", "--server.port", "8501"]
+sys.argv = ["streamlit", "run", "app.py", "--server.headless", "true", "--server.port", "8505"]
 main()

@@ -11,7 +11,7 @@ urls = {
 with sync_playwright() as p:
     browser = p.chromium.launch()
     # Set viewport large enough to trigger desktop view
-    page = browser.new_page(viewport={'width': 1600, 'height': 900})
+    page = browser.new_page(viewport={'width': 1600, 'height': 900}, ignore_https_errors=True)
     
     for name, url in urls.items():
         print(f"Capturing full page for {name}...")

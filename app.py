@@ -118,11 +118,11 @@ if uploaded_file:
         # Check if this is a NEW file to trigger state cleanup
         file_id = f"{uploaded_file.name}_{uploaded_file.size}"
         if st.session_state.get('last_file_id') != file_id:
-            st.session_state['uploaded_df'] = None # Clear old data
+            st.session_state['uploaded_df'] = None  # Clear old data
             st.session_state['last_file_id'] = file_id
-            # Trigger full app reset for clean forecast
-            for key in list(st.session_state.keys()):
-                if key not in ['uploaded_df', 'last_file_id']:
+            # Clear all filter caches so they repopulate from new data
+            for key in ['global_sectors', 'global_regions', 'global_companies']:
+                if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
 
@@ -139,32 +139,52 @@ if uploaded_file:
                 user_df['share_price'] = user_df['market_cap'] / 5e6
                 user_df['shares_outstanding'] = 5e6
             st.session_state['uploaded_df'] = user_df
-            st.sidebar.success(f"✅ **Live Data Active** — {len(user_df):,} rows")
+            st.sidebar.success(f"✅ **Live Data Active** — {len(user_df):,} rows loaded")
     except Exception as e:
         st.sidebar.error(f"Error reading file: {e}")
 else:
-    st.session_state['uploaded_df'] = None
+    if st.session_state.get('uploaded_df') is not None:
+        # User removed the file — clear everything
+        st.session_state['uploaded_df'] = None
+        for key in ['global_sectors', 'global_regions', 'global_companies', 'last_file_id']:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("## 🎯 Global Portfolio Filters")
 st.sidebar.caption("Filters apply across all pages instantly")
 
-# Load data to populate filter options
-raw_df = get_data()
+# ── CRITICAL FIX: Always load filter options from the ACTIVE data source ──
+# This ensures that when a user uploads their own CSV, the sector/company
+# filter dropdowns populate with THEIR data, not the synthetic demo data.
+filter_source_df = get_data()  # Respects uploaded_df if present
+
+all_sectors  = sorted(filter_source_df['sector'].unique().tolist())
+all_regions  = sorted(filter_source_df['region'].unique().tolist()) if 'region' in filter_source_df.columns else []
+all_companies = sorted(filter_source_df['company'].unique().tolist()) if 'company' in filter_source_df.columns else []
 
 st.session_state['global_sectors'] = st.sidebar.multiselect(
-    "Sectors", options=sorted(raw_df['sector'].unique()), 
-    default=st.session_state.get('global_sectors', sorted(raw_df['sector'].unique()))
+    "Sectors", options=all_sectors,
+    default=st.session_state.get('global_sectors', all_sectors)
 )
 
-st.session_state['global_regions'] = st.sidebar.multiselect(
-    "Regions", options=sorted(raw_df['region'].unique()), 
-    default=st.session_state.get('global_regions', sorted(raw_df['region'].unique()))
-)
+if all_regions:
+    st.session_state['global_regions'] = st.sidebar.multiselect(
+        "Regions", options=all_regions,
+        default=st.session_state.get('global_regions', all_regions)
+    )
+else:
+    st.session_state['global_regions'] = []
 
-available_companies = sorted(raw_df[raw_df['sector'].isin(st.session_state['global_sectors'])]['company'].unique())
+available_companies = sorted(
+    filter_source_df[
+        filter_source_df['sector'].isin(st.session_state['global_sectors'])
+    ]['company'].unique().tolist()
+) if 'company' in filter_source_df.columns else all_companies
+
 st.session_state['global_companies'] = st.sidebar.multiselect(
-    "Companies", options=available_companies, 
+    "Companies", options=available_companies,
     default=st.session_state.get('global_companies', available_companies)
 )
 

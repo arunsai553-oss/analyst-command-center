@@ -1,0 +1,54 @@
+[
+  {
+    "visId": "vis_0",
+    "name": "Revenue by Date",
+    "encodings": {
+      "x": [
+        {
+          "fid": "date",
+          "name": "date",
+          "semanticType": "temporal",
+          "analyticType": "dimension"
+        }
+      ],
+      "y": [
+        {
+          "fid": "revenue",
+          "name": "revenue",
+          "semanticType": "quantitative",
+          "analyticType": "measure",
+          "aggName": "sum"
+        }
+      ],
+      "color": [
+        {
+          "fid": "company",
+          "name": "company",
+          "semanticType": "nominal",
+          "analyticType": "dimension"
+        }
+      ],
+      "opacity": [],
+      "size": [],
+      "shape": [],
+      "radius": [],
+      "theta": [],
+      "row": [],
+      "column": [],
+      "longitude": [],
+      "latitude": [],
+      "geoId": [],
+      "details": [],
+      "filters": [],
+      "text": []
+    },
+    "config": {
+      "defaultAggregated": true,
+      "geoms": [
+        "bar"
+      ],
+      "coordSystem": "generic",
+      "limit": -1
+    }
+  }
+]
