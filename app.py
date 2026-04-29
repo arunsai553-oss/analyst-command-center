@@ -98,57 +98,80 @@ with col2:
 # SIDEBAR — Global Connect & Filters
 # ─────────────────────────────────────────
 st.sidebar.markdown("## 🔌 Connect Your Data")
-st.sidebar.caption("Upload a CSV with your real financial data to replace the demo dataset.")
+st.sidebar.caption("Upload a CSV with your financial data to replace the demo dataset.")
 
 uploaded_file = st.sidebar.file_uploader(
     "Upload CSV", type=["csv"],
-    help="Must have columns: date, company, sector, region, revenue, gross_profit, operating_income, net_income, assets, liabilities, equity, debt, customers, marketing_spend, cac, arpu"
+    help="Minimum required columns: date, company, sector, revenue"
 )
 
-# Required columns for user guidance
-REQUIRED_COLS = [
-    'date', 'company', 'sector', 'region', 'channel',
-    'revenue', 'gross_profit', 'operating_income', 'net_income',
-    'assets', 'liabilities', 'equity', 'debt',
-    'customers', 'orders', 'marketing_spend', 'cac', 'arpu', 'conversion_rate'
-]
+# CORE required columns only — everything else is optional (auto-filled)
+CORE_COLS = ['date', 'company', 'sector', 'revenue']
 
-if uploaded_file:
+# Optional columns — will be zero-filled if missing
+OPTIONAL_COLS = {
+    'region': 'Unknown', 'channel': 'Direct',
+    'gross_profit': 0, 'operating_income': 0, 'net_income': 0,
+    'assets': 0, 'liabilities': 0, 'equity': 1, 'debt': 0,
+    'customers': 0, 'orders': 0, 'marketing_spend': 0,
+    'cac': 0, 'arpu': 0, 'conversion_rate': 0,
+    'market_cap': 0, 'share_price': 0, 'shares_outstanding': 1e6
+}
+
+if uploaded_file is not None:
     try:
-        # Check if this is a NEW file to trigger state cleanup
-        file_id = f"{uploaded_file.name}_{uploaded_file.size}"
-        if st.session_state.get('last_file_id') != file_id:
-            st.session_state['uploaded_df'] = None  # Clear old data
-            st.session_state['last_file_id'] = file_id
-            # Clear all filter caches so they repopulate from new data
-            for key in ['global_sectors', 'global_regions', 'global_companies']:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
-
+        # Always read the current file — no rerun tricks
         user_df = pd.read_csv(uploaded_file)
-        user_df['date'] = pd.to_datetime(user_df['date'])
-        # Validate required columns
-        missing = [c for c in REQUIRED_COLS if c not in user_df.columns]
-        if missing:
-            st.sidebar.error(f"Missing columns: {', '.join(missing)}")
+
+        # Validate only core columns
+        missing_core = [c for c in CORE_COLS if c not in user_df.columns]
+
+        if missing_core:
+            st.sidebar.error(f"❌ Upload rejected — missing required columns: **{', '.join(missing_core)}**")
+            st.sidebar.info("Required: `date`, `company`, `sector`, `revenue`")
+            # Keep old data if any
         else:
-            # Pad market data columns if not present
-            if 'market_cap' not in user_df.columns:
+            # Parse dates
+            user_df['date'] = pd.to_datetime(user_df['date'], errors='coerce')
+            user_df = user_df.dropna(subset=['date'])
+
+            # Auto-fill all missing optional columns
+            for col, default in OPTIONAL_COLS.items():
+                if col not in user_df.columns:
+                    user_df[col] = default
+
+            # Derive market_cap if revenue exists and market_cap is missing/zero
+            if user_df['market_cap'].eq(0).all():
                 user_df['market_cap'] = user_df['revenue'] * 12 * 3
-                user_df['share_price'] = user_df['market_cap'] / 5e6
-                user_df['shares_outstanding'] = 5e6
+                user_df['share_price'] = user_df['market_cap'] / user_df['shares_outstanding']
+
+            # Detect if this is a genuinely new file
+            file_id = f"{uploaded_file.name}_{uploaded_file.size}"
+            is_new_file = st.session_state.get('last_file_id') != file_id
+
+            if is_new_file:
+                # Clear all caches so every page sees fresh data
+                st.cache_data.clear()
+                for key in ['global_sectors', 'global_regions', 'global_companies']:
+                    st.session_state.pop(key, None)
+                st.session_state['last_file_id'] = file_id
+
             st.session_state['uploaded_df'] = user_df
-            st.sidebar.success(f"✅ **Live Data Active** — {len(user_df):,} rows loaded")
+            original_cols = list(user_df.columns)
+            auto_filled = [c for c in OPTIONAL_COLS if c not in original_cols]
+            st.sidebar.success(f"✅ **Live Data Active** — {len(user_df):,} rows | {user_df['company'].nunique()} companies")
+            if auto_filled:
+                st.sidebar.caption(f"ℹ️ Auto-filled {len(auto_filled)} missing cols: {', '.join(auto_filled[:6])}{'...' if len(auto_filled)>6 else ''}")
+
     except Exception as e:
-        st.sidebar.error(f"Error reading file: {e}")
+        st.sidebar.error(f"❌ Error reading file: {e}")
 else:
+    # File was removed — reset to demo data
     if st.session_state.get('uploaded_df') is not None:
-        # User removed the file — clear everything
         st.session_state['uploaded_df'] = None
+        st.cache_data.clear()
         for key in ['global_sectors', 'global_regions', 'global_companies', 'last_file_id']:
-            if key in st.session_state:
-                del st.session_state[key]
+            st.session_state.pop(key, None)
         st.rerun()
 
 st.sidebar.markdown("---")
