@@ -1,0 +1,152 @@
+[
+  {
+    "id": 1,
+    "name": "Home page loads without crash",
+    "pass": false,
+    "detail": "Title found OK"
+  },
+  {
+    "id": 2,
+    "name": "Home page - No IndexError on date slicing",
+    "pass": true,
+    "detail": "No IndexError"
+  },
+  {
+    "id": 3,
+    "name": "Sidebar - CSV Upload widget present",
+    "pass": false,
+    "detail": "0 upload widget(s) found"
+  },
+  {
+    "id": 4,
+    "name": "Sidebar - Sector/Company filters present",
+    "pass": false,
+    "detail": "0 multiselect(s) found"
+  },
+  {
+    "id": 5,
+    "name": "Home - 4 KPI metric cards rendered",
+    "pass": false,
+    "detail": "0 metric card(s) found"
+  },
+  {
+    "id": 6,
+    "name": "Home - Plotly charts rendered",
+    "pass": false,
+    "detail": "0 Plotly chart(s) found"
+  },
+  {
+    "id": 7,
+    "name": "Market Scanner - Page loads without error",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "id": 8,
+    "name": "Market Scanner - Charts rendered",
+    "pass": true,
+    "detail": "3 chart(s)"
+  },
+  {
+    "id": 9,
+    "name": "Market Scanner - Rankings tab renders chart",
+    "pass": true,
+    "detail": "3 chart(s) on tab2"
+  },
+  {
+    "id": 10,
+    "name": "Deep Dive Lab - Page loads without error",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "id": 11,
+    "name": "Deep Dive - Correlation matrix + scatter charts",
+    "pass": true,
+    "detail": "3 chart(s)"
+  },
+  {
+    "id": 12,
+    "name": "Forecast & Scenarios - Page loads without error",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "id": 13,
+    "name": "Forecast - Chart + Projection Summary metrics",
+    "pass": false,
+    "detail": "1 chart(s), 0 metric(s)"
+  },
+  {
+    "id": 14,
+    "name": "Forecast - Metric label updates when switching to Customers (not hardcoded 'Revenue')",
+    "pass": true,
+    "detail": "Label dynamic OK"
+  },
+  {
+    "id": 15,
+    "name": "Experiments & KPIs - Page loads without error",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "id": 16,
+    "name": "Experiments - A/B chart and 4 KPI metrics visible",
+    "pass": false,
+    "detail": "1 chart(s), 0 metric(s)"
+  },
+  {
+    "id": 17,
+    "name": "Executive Summary - Page loads without error",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "id": 18,
+    "name": "Executive Summary - Narrative present + Download button",
+    "pass": true,
+    "detail": "Narrative OK"
+  },
+  {
+    "id": 19,
+    "name": "Executive Summary - No IndexError on date slicing (prev_date)",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "id": 20,
+    "name": "Tableau Data Studio - Page loads without error",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "id": 21,
+    "name": "Tableau - All 8 chart type buttons present",
+    "pass": true,
+    "detail": "Found: ['Bar', 'Line', 'Area', 'Scatter', 'Pie', 'Histogram', 'Box Plot', 'Heatmap']"
+  },
+  {
+    "id": 22,
+    "name": "Tableau - Default chart renders on page load (no drag required)",
+    "pass": true,
+    "detail": "1 chart(s)"
+  },
+  {
+    "id": 23,
+    "name": "Tableau - Clicking Line button renders line chart",
+    "pass": true,
+    "detail": "1 chart(s) after click"
+  },
+  {
+    "id": 24,
+    "name": "Forecast - 'Terminal Revenue (Median)' label is hardcoded (should be dynamic)",
+    "pass": true,
+    "detail": "KNOWN BUG: label hardcoded as 'Terminal Revenue' regardless of metric selected"
+  },
+  {
+    "id": 25,
+    "name": "Home - Download Full Dataset button present",
+    "pass": true,
+    "detail": "1 download button(s)"
+  }
+]

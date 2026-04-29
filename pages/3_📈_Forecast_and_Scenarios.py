@@ -104,22 +104,30 @@ with col1:
     # Probabilistic Median (Scen Validation)
     fig.add_trace(go.Scatter(x=future_dates, y=mc_median, mode='lines', name='Monte Carlo Median', line=dict(color='#1AAB40', width=3)))
     
-    prefix = "$" if target_metric != 'customers' else ""
-    fig.update_layout(title=f"Probabilistic {target_metric.replace('_', ' ').title()} Forecast (1,000 Trials)", yaxis_tickprefix=prefix, **apply_chart_theme())
+    is_currency = target_metric not in ['customers', 'conversion_rate']
+    prefix = "$" if is_currency else ""
+    metric_label = target_metric.replace('_', ' ').title()
+    fig.update_layout(title=f"Probabilistic {metric_label} Forecast (1,000 Trials)", yaxis_tickprefix=prefix, **apply_chart_theme())
     st.plotly_chart(fig, use_container_width=True)
 
 with col2:
     st.markdown("### Projection Summary")
     st.write(f"**Period:** Next {forecast_months} Months")
-    st.metric("Terminal Revenue (Median)", f"${mc_median[-1]/1e6:.1f}M")
-    
-    st.metric("95th Percentile (Optimistic)", f"${mc_upper[-1]/1e6:.1f}M")
-    st.metric("5th Percentile (Pessimistic)", f"${mc_lower[-1]/1e6:.1f}M")
-    
+
+    def fmt_val(v):
+        if is_currency:
+            if abs(v) >= 1e9: return f"${v/1e9:.2f}B"
+            return f"${v/1e6:.1f}M"
+        return f"{v:,.0f}"
+
+    st.metric(f"Terminal {metric_label} (Median)", fmt_val(mc_median[-1]))
+    st.metric("95th Percentile (Optimistic)", fmt_val(mc_upper[-1]))
+    st.metric("5th Percentile (Pessimistic)", fmt_val(mc_lower[-1]))
+
     st.markdown("---")
     st.markdown("### 💡 Analyst Insight")
     if scen_growth > 0.015:
-        st.success(f"High-growth scenario: Probabilistic median indicates **{prefix}{mc_median[-1]/1e6:.1f}M** terminal scale. 95% confidence ceiling at **{prefix}{mc_upper[-1]/1e6:.1f}M**.")
+        st.success(f"High-growth scenario: Probabilistic median indicates **{fmt_val(mc_median[-1])}** terminal scale. 95% ceiling at **{fmt_val(mc_upper[-1])}**.")
     else:
         st.info("The forecast bands represent the probability distribution based on 1,000 historical volatility simulations.")
 
@@ -132,4 +140,5 @@ out_df = pd.DataFrame({
     'Lower Bound (5%)': mc_lower
 }).set_index('Date')
 
-st.dataframe(out_df.style.format("${:,.0f}"), use_container_width=True)
+fmt_str = "${:,.0f}" if is_currency else "{:,.0f}"
+st.dataframe(out_df.style.format(fmt_str), use_container_width=True)

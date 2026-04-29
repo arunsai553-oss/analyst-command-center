@@ -13,7 +13,8 @@ st.markdown("Automated strategic synthesis of portfolio data for leadership.")
 
 df = get_data()
 latest_date = df['date'].max()
-prev_date = df['date'].unique()[-2] # Assuming sorted, get the prior period
+all_dates = sorted(df['date'].unique())
+prev_date = all_dates[-2] if len(all_dates) >= 2 else all_dates[-1]  # safe: handle single-period
 
 latest_data = df[df['date'] == latest_date]
 prev_data = df[df['date'] == prev_date]

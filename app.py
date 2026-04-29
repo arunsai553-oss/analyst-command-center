@@ -219,7 +219,7 @@ with st.spinner("Initializing Data Engine..."):
 # Slice most recent vs prior period
 dates = sorted(df['date'].unique())
 latest_date = dates[-1]
-prev_date = dates[-2]
+prev_date = dates[-2] if len(dates) >= 2 else dates[-1]  # safe fallback for single-period data
 latest_data = df[df['date'] == latest_date]
 prev_data = df[df['date'] == prev_date]
 
