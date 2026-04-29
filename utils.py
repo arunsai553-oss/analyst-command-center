@@ -6,278 +6,182 @@ import plotly.express as px
 import plotly.graph_objects as go
 from scipy import stats
 
+# ─────────────────────────────────────────────────────────────────────────────
+# DATA LOADING — accepts ANY CSV, no schema requirements
+# ─────────────────────────────────────────────────────────────────────────────
+
 def get_data():
     """
-    Master data loader. Priority order:
-    1. User-uploaded CSV (via session_state)
-    2. Local CSV from data/raw/
-    3. Synthetic data (fallback)
-    Returns a KPI-enriched DataFrame.
+    Master data loader. Returns uploaded CSV if present, otherwise synthetic demo.
+    NO column requirements — works with any dataset.
     """
-    if 'uploaded_df' in st.session_state and st.session_state['uploaded_df'] is not None:
-        return calculate_kpis(st.session_state['uploaded_df'])
-    return calculate_kpis(load_and_generate_data())
+    if st.session_state.get('uploaded_df') is not None:
+        return st.session_state['uploaded_df']
+    return load_demo_data()
+
+def get_filtered_data():
+    """Apply global filters (if set) to active dataset."""
+    df = get_data()
+    if 'global_filter_col' in st.session_state and 'global_filter_vals' in st.session_state:
+        col = st.session_state['global_filter_col']
+        vals = st.session_state['global_filter_vals']
+        if col and col in df.columns and vals:
+            df = df[df[col].isin(vals)]
+    return df
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COLUMN TYPE DETECTION
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_numeric_cols(df):
+    return df.select_dtypes(include='number').columns.tolist()
+
+def get_categorical_cols(df):
+    return df.select_dtypes(include=['object', 'category']).columns.tolist()
+
+def get_date_col(df):
+    """Return the first datetime column, or None."""
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            return col
+    # Try to find a column that looks like a date
+    for col in df.columns:
+        try:
+            sample = df[col].dropna().iloc[:5]
+            pd.to_datetime(sample)
+            return col
+        except:
+            pass
+    return None
+
+def auto_metric(df):
+    """Pick the first numeric column as default metric."""
+    nums = get_numeric_cols(df)
+    return nums[0] if nums else None
+
+def auto_group(df):
+    """Pick the first low-cardinality categorical column as default group."""
+    cats = get_categorical_cols(df)
+    for c in cats:
+        if 1 < df[c].nunique() <= 50:
+            return c
+    return cats[0] if cats else None
+
+def infer_and_coerce_dates(df):
+    """Attempt to parse any columns that look like dates into datetime."""
+    df = df.copy()
+    for col in df.select_dtypes(include='object').columns:
+        if df[col].nunique() < len(df) * 0.95:  # skip high-cardinality text
+            continue
+        try:
+            parsed = pd.to_datetime(df[col], infer_datetime_format=True, errors='coerce')
+            if parsed.notna().mean() > 0.7:  # >70% parsed successfully
+                df[col] = parsed
+        except:
+            pass
+    return df
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DEMO FALLBACK DATA
+# ─────────────────────────────────────────────────────────────────────────────
 
 @st.cache_data
-def load_and_generate_data():
-    """
-    Generates synthetic corporate financial and KPI data if a local dataset is not found.
-    Designed to be a plug-and-play substitute for real CSVs.
-    """
-    # Try loading from local CSV (in a real scenario)
-    try:
-        df = pd.read_csv("data/raw/financials.csv")
-        df['date'] = pd.to_datetime(df['date'])
-        return df
-    except:
-        pass  # Generate synthetic data instead
-
-        
+def load_demo_data():
     np.random.seed(42)
-    
     companies = [
-        {"company": "Quantum Dynamics", "ticker": "QDYN", "sector": "Technology", "region": "North America"},
-        {"company": "Stellar Networks", "ticker": "STNK", "sector": "Technology", "region": "Europe"},
-        {"company": "Apex Financials", "ticker": "APEX", "sector": "Finance", "region": "North America"},
-        {"company": "Global Trade Co", "ticker": "GLTR", "sector": "Finance", "region": "Asia"},
-        {"company": "MedTech Innovations", "ticker": "MTIN", "sector": "Healthcare", "region": "North America"},
-        {"company": "BioGenesis", "ticker": "BGEN", "sector": "Healthcare", "region": "Europe"},
-        {"company": "EcoEnergy Group", "ticker": "ECOE", "sector": "Energy", "region": "North America"},
-        {"company": "Aura Cosmetics", "ticker": "AURA", "sector": "Retail", "region": "Europe"},
-        {"company": "Urban Retailers", "ticker": "URBN", "sector": "Retail", "region": "Asia"},
-        {"company": "Velocity Motors", "ticker": "VLMT", "sector": "Manufacturing", "region": "North America"},
+        {"company": "Quantum Dynamics", "sector": "Technology", "region": "North America"},
+        {"company": "Stellar Networks",  "sector": "Technology", "region": "Europe"},
+        {"company": "Apex Financials",   "sector": "Finance",    "region": "North America"},
+        {"company": "Global Trade Co",   "sector": "Finance",    "region": "Asia"},
+        {"company": "MedTech Innovations","sector": "Healthcare","region": "North America"},
+        {"company": "BioGenesis",         "sector": "Healthcare","region": "Europe"},
+        {"company": "EcoEnergy Group",    "sector": "Energy",    "region": "North America"},
+        {"company": "Aura Cosmetics",     "sector": "Retail",    "region": "Europe"},
+        {"company": "Urban Retailers",    "sector": "Retail",    "region": "Asia"},
+        {"company": "Velocity Motors",    "sector": "Manufacturing","region": "North America"},
     ]
-    
-    dates = pd.date_range(start="2020-01-01", end="2023-12-31", freq='ME') # Monthly data
+    dates = pd.date_range("2020-01-01", "2023-12-31", freq='ME')
     records = []
-    
     for comp in companies:
-        base_revenue = np.random.uniform(10e6, 50e6)
-        growth_trend = np.random.uniform(-0.02, 0.05) # monthly growth rate trend with some noise
-        
-        current_revenue = base_revenue
-        for i, date in enumerate(dates):
-            # Financials
-            noise = np.random.normal(0, 0.05)
-            monthly_growth = growth_trend + noise
-            current_revenue = current_revenue * (1 + monthly_growth)
-            
-            gross_margin = np.random.uniform(0.4, 0.8)
-            operating_margin = gross_margin * np.random.uniform(0.3, 0.7)
-            net_margin = operating_margin * np.random.uniform(0.5, 0.8)
-            
-            gross_profit = current_revenue * gross_margin
-            operating_income = current_revenue * operating_margin
-            net_income = current_revenue * net_margin
-            
-            # Balance sheet (simplified relative to revenue scale)
-            assets = current_revenue * np.random.uniform(5, 12)
-            liabilities = assets * np.random.uniform(0.3, 0.8)
-            equity = assets - liabilities
-            debt = liabilities * np.random.uniform(0.4, 0.9)
-            
-            # KPIs
+        base = np.random.uniform(10e6, 50e6)
+        trend = np.random.uniform(-0.02, 0.05)
+        cur = base
+        for date in dates:
+            cur *= (1 + trend + np.random.normal(0, 0.05))
+            gm = np.random.uniform(0.4, 0.8)
+            om = gm * np.random.uniform(0.3, 0.7)
+            nm = om * np.random.uniform(0.5, 0.8)
             arpu = np.random.uniform(50, 500)
-            customers = int(current_revenue / arpu)
-            orders = int(customers * np.random.uniform(1, 5))
-            marketing_spend = current_revenue * np.random.uniform(0.05, 0.2)
-            cac = marketing_spend / (customers * 0.1) if customers > 0 else 0 # assumed 10% new
-            channel = np.random.choice(["Direct", "Partners", "Online", "Enterprise"])
-            conversion_rate = np.random.uniform(0.01, 0.15)
-            
-            # Market Data (Safe & Deterministic Valuation)
-            shares_outstanding = np.random.uniform(1e6, 10e6)
-            # Use Revenue multiple as a floor for share price to avoid negative valuation
-            rev_multiple = np.random.uniform(2, 6)
-            earnings_multiple = np.random.uniform(15, 25)
-            
-            value_from_rev = (current_revenue * 12 * rev_multiple) / shares_outstanding
-            value_from_earnings = max(0, (net_income * 12 * earnings_multiple) / shares_outstanding)
-            
-            share_price = max(value_from_rev * 0.7, value_from_earnings) + np.random.uniform(1, 5)
-            market_cap = share_price * shares_outstanding
-            
+            customers = int(cur / arpu)
+            ms = cur * np.random.uniform(0.05, 0.2)
             records.append({
                 **comp,
-                "date": date,
-                "revenue": current_revenue,
-                "gross_profit": gross_profit,
-                "operating_income": operating_income,
-                "net_income": net_income,
-                "assets": assets,
-                "liabilities": liabilities,
-                "equity": equity,
-                "debt": debt,
-                "customers": customers,
-                "orders": orders,
-                "marketing_spend": marketing_spend,
-                "cac": cac,
-                "arpu": arpu,
-                "channel": channel,
-                "conversion_rate": conversion_rate,
-                "share_price": share_price,
-                "market_cap": market_cap,
-                "shares_outstanding": shares_outstanding
+                "date": date, "channel": np.random.choice(["Direct","Partners","Online","Enterprise"]),
+                "revenue": cur, "gross_profit": cur*gm, "operating_income": cur*om, "net_income": cur*nm,
+                "assets": cur*np.random.uniform(5,12), "liabilities": cur*np.random.uniform(2,6),
+                "equity": cur*np.random.uniform(2,5), "debt": cur*np.random.uniform(1,4),
+                "customers": customers, "orders": int(customers*np.random.uniform(1,5)),
+                "marketing_spend": ms, "cac": ms/max(customers*0.1,1),
+                "arpu": arpu, "conversion_rate": np.random.uniform(0.01,0.15),
+                "market_cap": cur*12*np.random.uniform(2,6),
             })
-            
-    df = pd.DataFrame(records)
-    
-    # Save a mock csv for demonstration purposes so the user sees data is generated
-    import os
-    os.makedirs("data/processed", exist_ok=True)
-    try:
-        df.to_csv("data/processed/synthetic_financials.csv", index=False)
-    except:
-        pass
-        
-    return df
+    return pd.DataFrame(records)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A/B TEST DATA (standalone synthetic)
+# ─────────────────────────────────────────────────────────────────────────────
 
 @st.cache_data
 def load_experiment_data():
-    """Generates synthetic A/B test data."""
     np.random.seed(123)
     n = 2000
-    
     data = []
-    # Control Group
-    for _ in range(n // 2):
-        data.append({
-            "user_id": np.random.randint(10000, 99999),
-            "group": "Control",
-            "metric": "conversion",
-            "value": np.random.binomial(1, 0.05), # 5% baseline conversion
-            "date": pd.Timestamp('2023-11-01') + pd.Timedelta(days=int(np.random.uniform(0, 30)))
-        })
-    
-    # Treatment Group (Simulate a lift)
-    for _ in range(n // 2):
-        data.append({
-            "user_id": np.random.randint(10000, 99999),
-            "group": "Treatment",
-            "metric": "conversion",
-            "value": np.random.binomial(1, 0.058), # 5.8% conversion (lift)
-            "date": pd.Timestamp('2023-11-01') + pd.Timedelta(days=int(np.random.uniform(0, 30)))
-        })
-        
-    df = pd.DataFrame(data)
-    return df
+    for _ in range(n//2):
+        data.append({"user_id": np.random.randint(10000,99999), "group":"Control",
+                     "value": np.random.binomial(1,0.05),
+                     "date": pd.Timestamp('2023-11-01') + pd.Timedelta(days=int(np.random.uniform(0,30)))})
+    for _ in range(n//2):
+        data.append({"user_id": np.random.randint(10000,99999), "group":"Treatment",
+                     "value": np.random.binomial(1,0.058),
+                     "date": pd.Timestamp('2023-11-01') + pd.Timedelta(days=int(np.random.uniform(0,30)))})
+    return pd.DataFrame(data)
 
-def format_currency(val):
-    if val >= 1e9:
-        return f"${val/1e9:.2f}B"
-    elif val >= 1e6:
-        return f"${val/1e6:.2f}M"
-    elif val >= 1e3:
-        return f"${val/1e3:.2f}K"
-    else:
-        return f"${val:.2f}"
-
-def format_percentage(val):
-    return f"{val*100:.1f}%"
-
-def calculate_kpis(df):
-    """Calculates additional derived metrics with safety checks (1000 IQ Level)."""
-    df = df.copy()
-    
-    # Financial Margins
-    df['gross_margin_%'] = (df['gross_profit'] / df['revenue']).fillna(0)
-    df['operating_margin_%'] = (df['operating_income'] / df['revenue']).fillna(0)
-    df['net_margin_%'] = (df['net_income'] / df['revenue']).fillna(0)
-    
-    # Returns & Efficiency
-    df['roe_%'] = (df['net_income'] / df['equity']).fillna(0)
-    df['roa_%'] = (df['net_income'] / df['assets']).fillna(0)
-    df['roic_%'] = ((df['operating_income'] * 0.75) / (df['debt'] + df['equity'])).fillna(0)
-    df['debt_to_equity'] = (df['debt'] / df['equity']).fillna(0)
-    
-    # Valuation Multiples
-    df['price_to_sales'] = (df['market_cap'] / (df['revenue'] * 12)).fillna(0)
-    df['pe_ratio'] = (df['market_cap'] / (df['net_income'] * 12)).replace([np.inf, -np.inf], 0).fillna(0)
-    
-    # --- Altman Z-Score (Modified for Private Firms Analysis) ---
-    # Working Capital Approx = 0.2 * Revenue
-    # Retained Earnings Approx = 0.4 * Total Assets
-    X1 = (df['revenue'] * 0.2) / df['assets']
-    X2 = (df['assets'] * 0.4) / df['assets'] 
-    X3 = df['operating_income'] / df['assets']
-    X4 = df['equity'] / df['debt'].replace(0, 1e-6)
-    X5 = (df['revenue'] * 12) / df['assets']
-    
-    df['altman_z_score'] = (0.717 * X1) + (0.847 * X2) + (3.107 * X3) + (0.420 * X4) + (0.998 * X5)
-    
-    # Customer/Marketing Metrics
-    df['ltv_approx'] = (df['arpu'] * df['gross_margin_%']) / 0.05
-    df['ltv_to_cac'] = (df['ltv_approx'] / df['cac']).replace([np.inf, -np.inf], 0).fillna(0)
-    
-    return df
-
-def get_risk_rating(row):
-    """Categorizes company risk using the Altman Z-Score threshold."""
-    z = row['altman_z_score']
-    if z < 1.23: return 'Distress Zone'
-    if z < 2.90: return 'Grey Zone'
-    return 'Safe Zone'
-
-def get_metric_label(col):
-    """Maps internal column names to professional labels."""
-    mapping = {
-        'revenue': 'Revenue',
-        'gross_profit': 'Gross Profit',
-        'operating_income': 'Operating Income',
-        'net_income': 'Net Income',
-        'gross_margin_%': 'Gross Margin (%)',
-        'operating_margin_%': 'Operating Margin (%)',
-        'net_margin_%': 'Net Margin (%)',
-        'roe_%': 'ROE (%)',
-        'roa_%': 'ROA (%)',
-        'cac': 'CAC',
-        'ltv_to_cac': 'LTV to CAC',
-        'arpu': 'ARPU',
-        'customers': 'Total Customers',
-        'conversion_rate': 'Conversion Rate'
-    }
-    return mapping.get(col, col.replace('_', ' ').title())
-
-def get_filtered_data():
-    """
-    Retrieves the data and applies global filters stored in session state.
-    """
-    df = get_data()
-    
-    # Apply Global Filters if they exist
-    if 'global_sectors' in st.session_state and st.session_state['global_sectors']:
-        df = df[df['sector'].isin(st.session_state['global_sectors'])]
-    
-    if 'global_regions' in st.session_state and st.session_state['global_regions']:
-        df = df[df['region'].isin(st.session_state['global_regions'])]
-        
-    if 'global_companies' in st.session_state and st.session_state['global_companies']:
-        df = df[df['company'].isin(st.session_state['global_companies'])]
-        
-    return df
-
-def get_historical_growth(df, target_metric):
-    """
-    Calculates the average monthly growth rate for a metric to seed the forecast.
-    """
-    try:
-        hist_df = df.groupby('date')[target_metric].sum().reset_index()
-        growth = hist_df[target_metric].pct_change().mean()
-        return float(growth) if not np.isnan(growth) else 0.015
-    except:
-        return 0.015
+# ─────────────────────────────────────────────────────────────────────────────
+# UTILITY
+# ─────────────────────────────────────────────────────────────────────────────
 
 def apply_chart_theme():
-    """Returns a unified chart layout theme dictionary resembling Power BI/Tableau."""
     return dict(
         template="plotly_white",
         paper_bgcolor="rgba(255,255,255,1)",
         plot_bgcolor="rgba(255,255,255,1)",
-        font=dict(family="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif", color="#1e293b", size=13),
+        font=dict(family="'Segoe UI', sans-serif", color="#1e293b", size=13),
         margin=dict(l=40, r=40, t=60, b=40),
         hovermode="x unified",
-        colorway=["#118DFF", "#12239E", "#E66C37", "#6B007B", "#E044A7", "#744EC2", "#D9B300", "#D64550", "#197278", "#1AAB40"], # Power BI classic palette
-        title_font=dict(size=20, weight="bold", color="#0f172a"),
-        xaxis=dict(showgrid=False, zeroline=False, linecolor='#cbd5e1'),
-        yaxis=dict(showgrid=True, gridcolor='#f1f5f9', zeroline=False, linecolor='#cbd5e1')
+        colorway=["#118DFF","#12239E","#E66C37","#6B007B","#E044A7","#744EC2","#D9B300","#D64550","#197278","#1AAB40"],
+        title_font=dict(size=18, color="#0f172a"),
+        xaxis=dict(showgrid=False, zeroline=False),
+        yaxis=dict(showgrid=True, gridcolor='#f1f5f9', zeroline=False),
     )
+
+def format_value(val):
+    if isinstance(val, float) or isinstance(val, int):
+        if abs(val) >= 1e9: return f"{val/1e9:.2f}B"
+        if abs(val) >= 1e6: return f"{val/1e6:.2f}M"
+        if abs(val) >= 1e3: return f"{val/1e3:.1f}K"
+        return f"{val:.2f}"
+    return str(val)
+
+def get_historical_growth(df, col, date_col):
+    try:
+        ts = df.groupby(date_col)[col].sum().sort_index()
+        return float(ts.pct_change().mean())
+    except:
+        return 0.015
+
+# Legacy aliases so old page imports don't break
+def calculate_kpis(df): return df
+def load_and_generate_data(): return load_demo_data()
+def get_risk_rating(row): return "N/A"
+def format_currency(val): return format_value(val)
+def get_metric_label(col): return col.replace('_',' ').title()

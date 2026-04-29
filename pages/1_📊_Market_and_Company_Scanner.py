@@ -2,77 +2,94 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import sys
-import os
-
-# Ensure utils can be imported when running from pages/
+import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_and_generate_data, calculate_kpis, apply_chart_theme, format_currency, get_metric_label, get_data, get_filtered_data
+from utils import get_filtered_data, get_numeric_cols, get_categorical_cols, get_date_col, apply_chart_theme, auto_metric, auto_group
 
 st.set_page_config(page_title="Market Scanner", page_icon="📊", layout="wide")
+st.markdown("# 📊 Trends & Time Series")
 
-st.markdown("# 📊 Market & Company Scanner")
-st.markdown("Filter and drill down into absolute performance and sector-wide macroeconomic trends.")
+df = get_filtered_data()
+num_cols = get_numeric_cols(df)
+cat_cols = get_categorical_cols(df)
+date_col = get_date_col(df)
 
-# Use Global Filtered Data
-filtered_df = get_filtered_data()
+if not date_col:
+    st.warning("⚠️ No date/time column detected. Time series analysis requires a date column.")
+    st.dataframe(df.head(20), use_container_width=True)
+    st.stop()
 
-st.sidebar.info("💡 **Global Sync Active**: Using filters defined in the Home page sidebar.")
+if not num_cols:
+    st.warning("⚠️ No numeric columns found for analysis.")
+    st.stop()
 
-# --- Tabs ---
-tab1, tab2 = st.tabs(["📈 Time Series Analysis", "🏆 Rankings & Cross-Sectional"])
+# Ensure date is datetime
+df = df.copy()
+df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+df = df.dropna(subset=[date_col])
+
+tab1, tab2 = st.tabs(["📈 Time Series", "🏆 Rankings"])
 
 with tab1:
-    col_metric, col_agg = st.columns([2, 1])
-    with col_metric:
-        metric = st.selectbox("Select Metric", ["revenue", "gross_profit", "operating_income", "net_income", "customers"], index=0)
-    with col_agg:
-        agg_level = st.selectbox("Aggregation Level", ["Company", "Sector", "Region"], index=0)
-    
-    # Aggregation logic
-    if agg_level == "Company":
-        chart_data = filtered_df.groupby(['date', 'company'])[metric].sum().reset_index()
-        color_col = 'company'
-    elif agg_level == "Sector":
-        chart_data = filtered_df.groupby(['date', 'sector'])[metric].sum().reset_index()
-        color_col = 'sector'
-    else:
-        chart_data = filtered_df.groupby(['date', 'region'])[metric].sum().reset_index()
-        color_col = 'region'
-        
-    # Plotly Line Chart
-    fig = px.area(chart_data, x="date", y=metric, color=color_col, 
-                  title=f"{get_metric_label(metric)} Trends by {agg_level}",
-                  labels={metric: get_metric_label(metric), 'date': 'Period', color_col: agg_level})
-    fig.update_layout(**apply_chart_theme())
-    # If metric is currency
-    if metric in ['revenue', 'gross_profit', 'operating_income', 'net_income']:
-        fig.update_layout(yaxis_tickprefix="$")
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Margin Analysis
-    st.markdown("### Margin Compression / Expansion")
-    margin_data = filtered_df.groupby(['date'])[['gross_margin_%', 'operating_margin_%', 'net_margin_%']].mean().reset_index()
-    fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(x=margin_data['date'], y=margin_data['gross_margin_%'], mode='lines', name='Gross Margin'))
-    fig2.add_trace(go.Scatter(x=margin_data['date'], y=margin_data['operating_margin_%'], mode='lines', name='Operating Margin'))
-    fig2.add_trace(go.Scatter(x=margin_data['date'], y=margin_data['net_margin_%'], mode='lines', name='Net Margin'))
-    fig2.update_layout(title="Average Margins Over Time (Sector/Region Filtered)", yaxis_tickformat='.1%', **apply_chart_theme())
-    st.plotly_chart(fig2, use_container_width=True)
+    col_m, col_g, col_a = st.columns(3)
+    with col_m:
+        metric = st.selectbox("Metric", num_cols, index=0, key="ts_metric")
+    with col_g:
+        group_opts = ["(none)"] + cat_cols
+        group = st.selectbox("Group By", group_opts,
+                             index=group_opts.index(auto_group(df)) if auto_group(df) in group_opts else 0,
+                             key="ts_group")
+        group = None if group == "(none)" else group
+    with col_a:
+        agg_fn = st.selectbox("Aggregation", ["sum","mean","median","max","min"], key="ts_agg")
+
+    try:
+        if group:
+            agg_df = df.groupby([date_col, group])[metric].agg(agg_fn).reset_index()
+            fig = px.area(agg_df, x=date_col, y=metric, color=group,
+                          title=f"{agg_fn.title()} {metric.replace('_',' ').title()} over Time by {group.replace('_',' ').title()}")
+        else:
+            agg_df = df.groupby(date_col)[metric].agg(agg_fn).reset_index()
+            fig = px.line(agg_df, x=date_col, y=metric, markers=True,
+                          title=f"{agg_fn.title()} {metric.replace('_',' ').title()} over Time")
+        fig.update_layout(**apply_chart_theme())
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Chart error: {e}")
+
+    # Multi-metric trend
+    if len(num_cols) > 1:
+        st.markdown("### Multi-Metric Trend")
+        sel_metrics = st.multiselect("Compare metrics", num_cols, default=num_cols[:3], key="multi_metric")
+        if sel_metrics:
+            try:
+                m_df = df.groupby(date_col)[sel_metrics].mean().reset_index()
+                fig2 = go.Figure()
+                for m in sel_metrics:
+                    fig2.add_trace(go.Scatter(x=m_df[date_col], y=m_df[m], mode='lines', name=m.replace('_',' ').title()))
+                fig2.update_layout(title="Multi-Metric Comparison (Avg)", **apply_chart_theme())
+                st.plotly_chart(fig2, use_container_width=True)
+            except Exception as e:
+                st.error(f"Multi-metric error: {e}")
 
 with tab2:
-    st.markdown("### Top Performers (Most Recent Period)")
-    latest_date = filtered_df['date'].max()
-    latest_df = filtered_df[filtered_df['date'] == latest_date]
-    
-    rank_metric = st.selectbox("Rank By", ["revenue", "roe_%", "gross_margin_%", "ltv_to_cac"], index=0)
-    top_n = st.slider("Top N", 5, 20, 10, step=5)
-    
-    ranked_df = latest_df.sort_values(by=rank_metric, ascending=False).head(top_n)
-    
-    fig3 = px.bar(ranked_df, x="company", y=rank_metric, color="sector", text_auto='.2s' if rank_metric == 'revenue' else '.1%',
-                  title=f"Top {top_n} Companies by {rank_metric.replace('_', ' ').title()}")
-    fig3.update_layout(**apply_chart_theme())
-    st.plotly_chart(fig3, use_container_width=True)
-    
-    st.dataframe(ranked_df[['company', 'sector', 'region', 'revenue', 'roe_%', 'gross_margin_%', 'ltv_to_cac']].reset_index(drop=True), use_container_width=True)
+    st.markdown("### Rankings")
+    r_col1, r_col2 = st.columns(2)
+    with r_col1:
+        rank_metric = st.selectbox("Rank By", num_cols, key="rank_metric")
+    with r_col2:
+        rank_group  = st.selectbox("Group By", cat_cols, key="rank_group") if cat_cols else None
+        top_n = st.slider("Top N", 5, 50, 10, key="rank_n")
+
+    if rank_group:
+        try:
+            ranked = df.groupby(rank_group)[rank_metric].sum().sort_values(ascending=False).head(top_n).reset_index()
+            fig3 = px.bar(ranked, x=rank_group, y=rank_metric, color=rank_group,
+                          title=f"Top {top_n} {rank_group.replace('_',' ').title()} by {rank_metric.replace('_',' ').title()}")
+            fig3.update_layout(**apply_chart_theme(), showlegend=False)
+            st.plotly_chart(fig3, use_container_width=True)
+            st.dataframe(ranked, use_container_width=True)
+        except Exception as e:
+            st.error(f"Ranking error: {e}")
+    else:
+        st.info("Add a categorical column to your data to enable rankings.")

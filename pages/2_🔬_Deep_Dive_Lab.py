@@ -1,78 +1,106 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-import sys
-import os
-
+import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import load_and_generate_data, calculate_kpis, apply_chart_theme, get_data, get_filtered_data
+from utils import get_filtered_data, get_numeric_cols, get_categorical_cols, apply_chart_theme
 
 st.set_page_config(page_title="Deep Dive Lab", page_icon="🔬", layout="wide")
-
 st.markdown("# 🔬 Deep Dive Lab")
-st.markdown("Exploratory Data Analysis (EDA) interface for investigating correlations and multifaceted groups.")
+st.markdown("Correlations, distributions, pivot analysis — on any dataset.")
 
-# Use Global Filtered Data
 df = get_filtered_data()
+num_cols = get_numeric_cols(df)
+cat_cols = get_categorical_cols(df)
 
-st.sidebar.info("💡 **Global Sync Active**: Using filters defined in the Home page sidebar.")
+if len(num_cols) < 2:
+    st.warning("⚠️ Deep Dive requires at least 2 numeric columns. Your dataset has: " + str(num_cols))
+    st.dataframe(df.head(10), use_container_width=True)
+    st.stop()
 
+# ── Correlation Matrix ───────────────────────────────────────────────────────
 col1, col2 = st.columns(2)
 
 with col1:
     st.markdown("### 🧩 Correlation Matrix")
-    st.caption("Identify relationships between operational metrics and financial outcomes.")
-    corr_cols = st.multiselect("Select Variables", 
-                               options=['revenue', 'marketing_spend', 'cac', 'arpu', 'conversion_rate', 'gross_margin_%', 'roe_%', 'ltv_to_cac', 'debt_to_equity'],
-                               default=['revenue', 'marketing_spend', 'cac', 'gross_margin_%', 'ltv_to_cac'])
-    
-    if len(corr_cols) > 1:
-        corr_matrix = df[corr_cols].corr()
-        fig = px.imshow(corr_matrix, text_auto=True, color_continuous_scale='RdBu_r', aspect="auto")
-        theme = apply_chart_theme()
-        theme['margin'] = dict(l=20, r=20, t=40, b=20)  # Override margin for compact view
-        fig.update_layout(**theme)
-        st.plotly_chart(fig, use_container_width=True)
+    sel_corr = st.multiselect("Select columns", num_cols, default=num_cols[:min(6, len(num_cols))])
+    if len(sel_corr) >= 2:
+        try:
+            corr = df[sel_corr].corr()
+            fig = px.imshow(corr, text_auto=True, color_continuous_scale='RdBu_r', aspect='auto',
+                            title="Correlation Heatmap")
+            fig.update_layout(**apply_chart_theme())
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.error(f"Correlation error: {e}")
     else:
-        st.warning("Select at least 2 variables for correlation.")
+        st.info("Select at least 2 columns.")
 
 with col2:
-    st.markdown("### 🎲 Custom Dissection (Pivot)")
-    st.caption("Aggregate and segment data dynamically.")
-    
-    pivot_index = st.selectbox("Group By", ["sector", "region", "channel", "company"])
-    pivot_val = st.selectbox("Value to Aggregate", ["revenue", "customers", "marketing_spend", "operating_income"])
-    pivot_agg = st.selectbox("Aggregation Function", ["sum", "mean", "median"])
-    
-    # Advanced logic for time mapping (yearly) if needed
-    df['Year'] = df['date'].dt.year
-    pivot_cols = st.selectbox("Columns (Optional)", ["None", "Year"])
-    
-    if pivot_cols != "None":
-        pivot_df = pd.pivot_table(df, values=pivot_val, index=pivot_index, columns=pivot_cols, aggfunc=pivot_agg).fillna(0)
-        st.dataframe(pivot_df.style.background_gradient(cmap='Blues'), use_container_width=True)
-        
-        # Heatmap of pivot
-        fig2 = px.imshow(pivot_df, text_auto=True, color_continuous_scale='Viridis', aspect="auto")
-        fig2.update_layout(title=f"{pivot_val} by {pivot_index} and {pivot_cols}", **apply_chart_theme())
-        st.plotly_chart(fig2, use_container_width=True)
-    else:
-        agg_df = df.groupby(pivot_index)[pivot_val].agg(pivot_agg).reset_index().sort_values(by=pivot_val, ascending=False)
-        fig2 = px.bar(agg_df, x=pivot_index, y=pivot_val, color=pivot_index)
+    st.markdown("### 📊 Distribution Explorer")
+    dist_col = st.selectbox("Column to analyze", num_cols, key="dist_col")
+    color_by  = st.selectbox("Color By", ["(none)"] + cat_cols, key="dist_color")
+    color_arg = None if color_by == "(none)" else color_by
+    try:
+        fig2 = px.histogram(df, x=dist_col, color=color_arg, nbins=40,
+                            title=f"Distribution of {dist_col.replace('_',' ').title()}",
+                            marginal="box")
         fig2.update_layout(**apply_chart_theme())
         st.plotly_chart(fig2, use_container_width=True)
+    except Exception as e:
+        st.error(f"Histogram error: {e}")
 
-st.markdown("### Scatter Analysis")
-sc_x = st.selectbox("X-Axis", ['cac', 'marketing_spend', 'revenue', 'gross_margin_%'])
-sc_y = st.selectbox("Y-Axis", ['ltv_to_cac', 'conversion_rate', 'net_income', 'roe_%'], index=0)
-sc_size = st.selectbox("Size (Optional)", ['None', 'revenue', 'customers', 'assets'])
-sc_color = st.selectbox("Color Segment", ['sector', 'region', 'channel'])
+# ── Pivot Table ──────────────────────────────────────────────────────────────
+st.markdown("### 🎲 Dynamic Pivot Table")
+if cat_cols:
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: pivot_idx = st.selectbox("Rows (Group By)", cat_cols, key="piv_idx")
+    with c2: pivot_val = st.selectbox("Value", num_cols, key="piv_val")
+    with c3: pivot_agg = st.selectbox("Aggregation", ["sum","mean","median","count","max","min"], key="piv_agg")
+    with c4:
+        col_opts = ["(none)"] + [c for c in cat_cols if c != pivot_idx]
+        pivot_col = st.selectbox("Columns (Optional)", col_opts, key="piv_col")
 
-size_arg = sc_size if sc_size != 'None' else None
+    try:
+        if pivot_col != "(none)":
+            piv = pd.pivot_table(df, values=pivot_val, index=pivot_idx,
+                                 columns=pivot_col, aggfunc=pivot_agg).fillna(0)
+            st.dataframe(piv.style.background_gradient(cmap='Blues'), use_container_width=True)
+            fig3 = px.imshow(piv, text_auto=True, color_continuous_scale='Viridis', aspect='auto',
+                             title=f"{pivot_val} by {pivot_idx} × {pivot_col}")
+            fig3.update_layout(**apply_chart_theme())
+            st.plotly_chart(fig3, use_container_width=True)
+        else:
+            agg_df = df.groupby(pivot_idx)[pivot_val].agg(pivot_agg).reset_index().sort_values(pivot_val, ascending=False)
+            fig3 = px.bar(agg_df, x=pivot_idx, y=pivot_val, color=pivot_idx,
+                          title=f"{pivot_agg.title()} {pivot_val.replace('_',' ').title()} by {pivot_idx.replace('_',' ').title()}")
+            fig3.update_layout(**apply_chart_theme(), showlegend=False)
+            st.plotly_chart(fig3, use_container_width=True)
+    except Exception as e:
+        st.error(f"Pivot error: {e}")
+else:
+    st.info("Add categorical columns to enable pivot analysis.")
 
-fig_scatter = px.scatter(df, x=sc_x, y=sc_y, size=size_arg, color=sc_color, hover_name='company', 
-                         title=f"{sc_y} vs {sc_x} segmented by {sc_color}",
-                         marginal_x="box", marginal_y="box")
-fig_scatter.update_layout(**apply_chart_theme())
-st.plotly_chart(fig_scatter, use_container_width=True)
+# ── Scatter ──────────────────────────────────────────────────────────────────
+st.markdown("### 🔵 Scatter Analysis")
+sc1, sc2, sc3, sc4 = st.columns(4)
+with sc1: sc_x = st.selectbox("X Axis", num_cols, index=0, key="sc_x")
+with sc2: sc_y = st.selectbox("Y Axis", num_cols, index=min(1,len(num_cols)-1), key="sc_y")
+with sc3:
+    size_opts = ["(none)"] + num_cols
+    sc_sz = st.selectbox("Size", size_opts, key="sc_sz")
+    sc_sz = None if sc_sz == "(none)" else sc_sz
+with sc4:
+    col_opts2 = ["(none)"] + cat_cols
+    sc_col = st.selectbox("Color", col_opts2, key="sc_col")
+    sc_col = None if sc_col == "(none)" else sc_col
+
+try:
+    hover_col = cat_cols[0] if cat_cols else None
+    fig4 = px.scatter(df, x=sc_x, y=sc_y, size=sc_sz, color=sc_col,
+                      hover_name=hover_col, marginal_x="box", marginal_y="box",
+                      title=f"{sc_y.replace('_',' ').title()} vs {sc_x.replace('_',' ').title()}")
+    fig4.update_layout(**apply_chart_theme())
+    st.plotly_chart(fig4, use_container_width=True)
+except Exception as e:
+    st.error(f"Scatter error: {e}")

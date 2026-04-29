@@ -1,218 +1,139 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import sys
-import os
-
+import pygwalker as pyg
+from pygwalker.api.streamlit import StreamlitRenderer
+import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils import get_data
+from utils import get_data, get_numeric_cols, get_categorical_cols, get_date_col, apply_chart_theme, auto_metric, auto_group, format_value
+import plotly.express as px
 
 st.set_page_config(page_title="Tableau Data Studio", page_icon="🧮", layout="wide")
 
-# ── CSS for chart-type buttons ──────────────────────────────────────────────
 st.markdown("""
 <style>
-div[data-testid="stHorizontalBlock"] > div > div[data-testid="stVerticalBlock"] button {
-    width: 100% !important;
-}
-.chart-header {
-    background: linear-gradient(135deg, #1a1f3c 0%, #2d3561 100%);
-    border-radius: 12px;
-    padding: 16px 24px;
-    margin-bottom: 8px;
-    color: #a78bfa;
-    font-weight: 700;
-    font-size: 1rem;
-    letter-spacing: 0.5px;
-}
+    .main-header { font-size: 2.5rem; font-weight: 800; color: #0f172a; margin-bottom: 0.5rem; }
+    .sub-text { font-size: 1.1rem; color: #64748b; margin-bottom: 2rem; }
+    .stButton > button {
+        width: 100%;
+        border-radius: 8px;
+        height: 3rem;
+        font-weight: 600;
+        background-color: white;
+        color: #1e293b;
+        border: 1px solid #e2e8f0;
+        transition: all 0.3s;
+    }
+    .stButton > button:hover {
+        border-color: #3b82f6;
+        color: #3b82f6;
+        background-color: #f8fafc;
+        transform: translateY(-2px);
+    }
+    .active-btn > button {
+        background-color: #3b82f6 !important;
+        color: white !important;
+        border-color: #3b82f6 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("# 🧮 Tableau Data Studio")
-st.write("---")
+st.markdown('<h1 class="main-header">🧮 Tableau Data Studio</h1>', unsafe_allow_html=True)
+st.markdown('<p class="sub-text">Advanced drag-and-drop exploration combined with one-click quick charts.</p>', unsafe_allow_html=True)
 
+# Master Data Load
 df = get_data()
+num_cols = get_numeric_cols(df)
+cat_cols = get_categorical_cols(df)
+date_col = get_date_col(df)
 
-# ── Sidebar filters ──────────────────────────────────────────────────────────
-st.sidebar.header("🔍 Filters")
-if "sector" in df.columns:
-    sectors = st.sidebar.multiselect("Sector", sorted(df["sector"].unique()), default=list(df["sector"].unique()))
-    df = df[df["sector"].isin(sectors)]
-if "company" in df.columns:
-    companies = st.sidebar.multiselect("Company", sorted(df["company"].unique()), default=list(df["company"].unique()))
-    df = df[df["company"].isin(companies)]
+if df.empty:
+    st.warning("No data loaded. Please upload a CSV in the sidebar or use the demo data.")
+    st.stop()
 
-numeric_cols  = df.select_dtypes(include="number").columns.tolist()
-category_cols = df.select_dtypes(exclude="number").columns.tolist()
-all_cols      = df.columns.tolist()
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 1: QUICK BUILDER (Plotly based)
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("### ⚡ Quick Chart Builder")
+st.caption("Select a chart type and axes to instantly visualize patterns.")
 
-# ── Section 1: Quick Chart Builder ──────────────────────────────────────────
-st.markdown('<div class="chart-header">⚡ SECTION 1 — Quick Chart Builder (Choose a Chart Type Below)</div>', unsafe_allow_html=True)
+# Layout for Quick Builder
+col_ctrl, col_chart = st.columns([1, 3])
 
-# ── Big labelled chart type buttons ─────────────────────────────────────────
-chart_types = [
-    ("📊", "Bar"),
-    ("📈", "Line"),
-    ("📉", "Area"),
-    ("🔵", "Scatter"),
-    ("🍩", "Pie"),
-    ("🟦", "Histogram"),
-    ("📦", "Box Plot"),
-    ("🔥", "Heatmap"),
-]
+with col_ctrl:
+    chart_type = st.selectbox("Chart Type", 
+                                ["Bar", "Line", "Area", "Scatter", "Pie", "Histogram", "Box Plot", "Heatmap"],
+                                index=0)
+    
+    if num_cols:
+        default_x = date_col if date_col and chart_type in ["Line", "Area"] else (cat_cols[0] if cat_cols else num_cols[0])
+        x_axis = st.selectbox("X-Axis", df.columns, index=df.columns.get_loc(default_x) if default_x in df.columns else 0)
+        
+        default_y = auto_metric(df) or num_cols[0]
+        y_axis = st.selectbox("Y-Axis", num_cols, index=num_cols.index(default_y) if default_y in num_cols else 0)
+        
+        color_opts = ["(none)"] + cat_cols
+        color_by = st.selectbox("Color/Legend", color_opts, index=0)
+        color_arg = None if color_by == "(none)" else color_by
+        
+        agg_fn = st.selectbox("Aggregation", ["sum", "mean", "median", "count", "max", "min"], index=0)
+    else:
+        st.warning("No numeric columns found for chart building.")
 
-if "selected_chart" not in st.session_state:
-    st.session_state.selected_chart = "Bar"
+with col_chart:
+    if num_cols:
+        try:
+            fig = None
+            title = f"{agg_fn.title()} {y_axis} by {x_axis}"
+            
+            if chart_type == "Bar":
+                agg_df = df.groupby([x_axis] + ([color_by] if color_arg else []))[y_axis].agg(agg_fn).reset_index()
+                fig = px.bar(agg_df, x=x_axis, y=y_axis, color=color_arg, title=title)
+            
+            elif chart_type == "Line":
+                agg_df = df.groupby([x_axis] + ([color_by] if color_arg else []))[y_axis].agg(agg_fn).reset_index()
+                fig = px.line(agg_df, x=x_axis, y=y_axis, color=color_arg, title=title, markers=True)
+                
+            elif chart_type == "Area":
+                agg_df = df.groupby([x_axis] + ([color_by] if color_arg else []))[y_axis].agg(agg_fn).reset_index()
+                fig = px.area(agg_df, x=x_axis, y=y_axis, color=color_arg, title=title)
+                
+            elif chart_type == "Scatter":
+                fig = px.scatter(df, x=x_axis, y=y_axis, color=color_arg, title=title, opacity=0.7)
+                
+            elif chart_type == "Pie":
+                agg_df = df.groupby(x_axis)[y_axis].agg(agg_fn).reset_index()
+                fig = px.pie(agg_df, names=x_axis, values=y_axis, title=title)
+                
+            elif chart_type == "Histogram":
+                fig = px.histogram(df, x=x_axis, color=color_arg, title=f"Distribution of {x_axis}")
+                
+            elif chart_type == "Box Plot":
+                fig = px.box(df, x=x_axis, y=y_axis, color=color_arg, title=f"Box Plot of {y_axis} by {x_axis}")
+                
+            elif chart_type == "Heatmap" and cat_cols:
+                y_cat = st.selectbox("Y-Category", [c for c in cat_cols if c != x_axis], key="heat_y")
+                piv = df.pivot_table(values=y_axis, index=y_cat, columns=x_axis, aggfunc=agg_fn).fillna(0)
+                fig = px.imshow(piv, text_auto=True, aspect="auto", title=f"{agg_fn.title()} {y_axis} Heatmap")
 
-cols = st.columns(len(chart_types))
-for i, (icon, name) in enumerate(chart_types):
-    with cols[i]:
-        is_active = st.session_state.selected_chart == name
-        btn_style = "primary" if is_active else "secondary"
-        if st.button(f"{icon}  {name}", key=f"chart_btn_{name}", type=btn_style, use_container_width=True):
-            st.session_state.selected_chart = name
+            if fig:
+                fig.update_layout(**apply_chart_theme())
+                st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error generating chart: {e}")
 
-chart_type = st.session_state.selected_chart
-st.caption(f"Selected: **{chart_type}**  — Configure axes below, chart updates instantly.")
-
-# ── Axis controls ────────────────────────────────────────────────────────────
-c1, c2, c3, c4 = st.columns(4)
-
-if chart_type in ["Bar", "Line", "Area", "Scatter"]:
-    with c1:
-        x_col = st.selectbox("X Axis", all_cols, index=all_cols.index("date") if "date" in all_cols else 0, key="x_col")
-    with c2:
-        y_col = st.selectbox("Y Axis", numeric_cols, index=0, key="y_col")
-    with c3:
-        color_col_opts = ["None"] + category_cols
-        color_col = st.selectbox("Color By", color_col_opts, key="color_col")
-        color_col = None if color_col == "None" else color_col
-    with c4:
-        agg = st.selectbox("Aggregation", ["sum","mean","median","count","max","min"], key="agg")
-
-elif chart_type == "Pie":
-    with c1:
-        pie_names = st.selectbox("Slice Labels", category_cols, key="pie_names")
-    with c2:
-        pie_vals  = st.selectbox("Slice Values", numeric_cols, key="pie_vals")
-    with c3:
-        hole = st.slider("Donut Hole", 0.0, 0.7, 0.0, 0.05, key="hole")
-    with c4:
-        agg = st.selectbox("Aggregation", ["sum","mean"], key="agg_pie")
-
-elif chart_type == "Histogram":
-    with c1:
-        hist_col = st.selectbox("Column", numeric_cols, key="hist_col")
-    with c2:
-        nbins = st.slider("Bins", 5, 100, 30, key="nbins")
-    with c3:
-        color_col_opts = ["None"] + category_cols
-        color_col = st.selectbox("Color By", color_col_opts, key="color_col_h")
-        color_col = None if color_col == "None" else color_col
-    with c4:
-        st.empty()
-
-elif chart_type == "Box Plot":
-    with c1:
-        box_y = st.selectbox("Value (Y)", numeric_cols, key="box_y")
-    with c2:
-        box_x_opts = ["None"] + category_cols
-        box_x = st.selectbox("Group By (X)", box_x_opts, key="box_x")
-        box_x = None if box_x == "None" else box_x
-    with c3:
-        color_col_opts = ["None"] + category_cols
-        color_col = st.selectbox("Color By", color_col_opts, key="color_col_b")
-        color_col = None if color_col == "None" else color_col
-    with c4:
-        st.empty()
-
-elif chart_type == "Heatmap":
-    with c1:
-        hm_x = st.selectbox("X (Category)", category_cols, key="hm_x")
-    with c2:
-        hm_y = st.selectbox("Y (Category)", category_cols, index=min(1,len(category_cols)-1), key="hm_y")
-    with c3:
-        hm_val = st.selectbox("Value", numeric_cols, key="hm_val")
-    with c4:
-        st.empty()
-
-# ── Render chart ─────────────────────────────────────────────────────────────
-fig = None
-try:
-    if chart_type == "Bar":
-        grp = [x_col] + ([color_col] if color_col else [])
-        plot_df = df.groupby(grp)[y_col].agg(agg).reset_index()
-        fig = px.bar(plot_df, x=x_col, y=y_col, color=color_col,
-                     title=f"{agg.title()} of {y_col} by {x_col}",
-                     template="plotly_white", barmode="group")
-
-    elif chart_type == "Line":
-        grp = [x_col] + ([color_col] if color_col else [])
-        plot_df = df.groupby(grp)[y_col].agg(agg).reset_index()
-        fig = px.line(plot_df, x=x_col, y=y_col, color=color_col,
-                      title=f"{y_col} over {x_col}", template="plotly_white", markers=True)
-
-    elif chart_type == "Area":
-        grp = [x_col] + ([color_col] if color_col else [])
-        plot_df = df.groupby(grp)[y_col].agg(agg).reset_index()
-        fig = px.area(plot_df, x=x_col, y=y_col, color=color_col,
-                      title=f"{y_col} Area over {x_col}", template="plotly_white")
-
-    elif chart_type == "Scatter":
-        fig = px.scatter(df, x=x_col, y=y_col, color=color_col,
-                         title=f"{y_col} vs {x_col}", template="plotly_white", opacity=0.7)
-
-    elif chart_type == "Pie":
-        plot_df = df.groupby(pie_names)[pie_vals].agg(agg).reset_index()
-        fig = px.pie(plot_df, names=pie_names, values=pie_vals,
-                     title=f"{pie_vals} by {pie_names}", hole=hole, template="plotly_white")
-
-    elif chart_type == "Histogram":
-        fig = px.histogram(df, x=hist_col, color=color_col, nbins=nbins,
-                           title=f"Distribution of {hist_col}", template="plotly_white")
-
-    elif chart_type == "Box Plot":
-        fig = px.box(df, x=box_x, y=box_y, color=color_col,
-                     title=f"Distribution of {box_y}", template="plotly_white", points="outliers")
-
-    elif chart_type == "Heatmap":
-        pivot = df.groupby([hm_y, hm_x])[hm_val].mean().reset_index().pivot(index=hm_y, columns=hm_x, values=hm_val)
-        fig = px.imshow(pivot, title=f"Avg {hm_val} Heatmap",
-                        color_continuous_scale="viridis", template="plotly_white", aspect="auto")
-
-    if fig:
-        fig.update_layout(height=520, font=dict(family="Inter, sans-serif", size=13),
-                          legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-        st.plotly_chart(fig, use_container_width=True)
-
-except Exception as e:
-    st.error(f"Chart error: {e}. Try changing the axis selection.")
-
-# ── KPI row ─────────────────────────────────────────────────────────────────
 st.write("---")
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("Rows", f"{len(df):,}")
-k2.metric("Columns", len(df.columns))
-if numeric_cols:
-    k3.metric(f"Avg {numeric_cols[0]}", f"${df[numeric_cols[0]].mean()/1e6:.1f}M")
-    k4.metric(f"Total {numeric_cols[0]}", f"${df[numeric_cols[0]].sum()/1e9:.2f}B")
 
-# ── Section 2: Advanced Drag-and-Drop ───────────────────────────────────────
-st.write("---")
-st.markdown('<div class="chart-header">🖱️ SECTION 2 — Advanced: Drag & Drop Explorer (PyGWalker)</div>', unsafe_allow_html=True)
-st.caption("Drag fields from the **Field List** → **X-Axis** / **Y-Axis** boxes. Chart type icons are in the **second row of the toolbar** (the small icons after the undo/redo arrows).")
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 2: ADVANCED EXPLORER (PyGWalker)
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("### 🧱 Advanced Drag-and-Drop Explorer")
+st.caption("Native Tableau-like experience. Drag fields from the left to columns/rows/color to build custom views.")
 
-try:
-    from pygwalker.api.streamlit import StreamlitRenderer
+@st.cache_resource
+def get_pyg_renderer(df_hashable):
+    # PyGWalker needs the actual dataframe
+    return StreamlitRenderer(df, spec="./gw_config.json", debug=False)
 
-    @st.cache_resource
-    def get_renderer():
-        return StreamlitRenderer(df, kernel_computation=True)
-
-    renderer = get_renderer()
-    renderer.explorer(default_tab="vis")
-
-except ImportError:
-    st.info("PyGWalker not installed — install it for drag-and-drop mode.")
-except Exception as e:
-    st.error(f"PyGWalker error: {e}")
+# We use a trick to make the dataframe "hashable" or just rely on session state
+renderer = get_pyg_renderer(id(df))
+renderer.explorer()
