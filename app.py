@@ -123,48 +123,78 @@ if uploaded_file is not None:
         # Always read the current file — no rerun tricks
         user_df = pd.read_csv(uploaded_file)
 
-        # Validate only core columns
+        # ── Step 1: Normalize all column names to lowercase + strip spaces ──
+        user_df.columns = [c.strip().lower().replace(' ', '_') for c in user_df.columns]
+
+        # ── Step 2: Apply common alias mappings ──────────────────────────────
+        ALIASES = {
+            # date variants
+            'date': ['date', 'period', 'month', 'year', 'time', 'fiscal_date', 'report_date', 'year_month'],
+            # company variants
+            'company': ['company', 'company_name', 'firm', 'organization', 'name', 'entity', 'ticker', 'symbol'],
+            # sector variants
+            'sector': ['sector', 'industry', 'category', 'segment', 'business_unit', 'division', 'vertical'],
+            # revenue variants
+            'revenue': ['revenue', 'sales', 'total_sales', 'total_revenue', 'net_sales', 'income', 'turnover', 'gross_revenue'],
+            # other financials
+            'gross_profit': ['gross_profit', 'gross_income', 'gross_margin_value'],
+            'operating_income': ['operating_income', 'ebit', 'operating_profit', 'op_income'],
+            'net_income': ['net_income', 'net_profit', 'profit', 'earnings', 'net_earnings'],
+            'customers': ['customers', 'customer_count', 'clients', 'users', 'active_users'],
+            'marketing_spend': ['marketing_spend', 'marketing', 'ad_spend', 'advertising'],
+            'cac': ['cac', 'customer_acquisition_cost', 'acquisition_cost'],
+            'arpu': ['arpu', 'average_revenue_per_user', 'avg_revenue_per_user'],
+            'region': ['region', 'geography', 'country', 'location', 'area', 'market'],
+        }
+        for target_col, variants in ALIASES.items():
+            if target_col not in user_df.columns:
+                for v in variants:
+                    if v in user_df.columns:
+                        user_df.rename(columns={v: target_col}, inplace=True)
+                        break
+
+        # ── Step 3: Validate only 4 core columns ─────────────────────────────
         missing_core = [c for c in CORE_COLS if c not in user_df.columns]
 
         if missing_core:
-            st.sidebar.error(f"❌ Upload rejected — missing required columns: **{', '.join(missing_core)}**")
-            st.sidebar.info("Required: `date`, `company`, `sector`, `revenue`")
-            # Keep old data if any
+            found_cols = ', '.join(user_df.columns.tolist()[:10])
+            st.sidebar.error(f"❌ Upload rejected — could not find: **{', '.join(missing_core)}**")
+            st.sidebar.warning(f"Columns found in your file: `{found_cols}{'...' if len(user_df.columns)>10 else ''}`")
+            st.sidebar.info("Rename your columns to match: `date`, `company`, `sector`, `revenue` (case doesn't matter)")
         else:
             # Parse dates
             user_df['date'] = pd.to_datetime(user_df['date'], errors='coerce')
             user_df = user_df.dropna(subset=['date'])
 
             # Auto-fill all missing optional columns
+            original_cols = set(user_df.columns.tolist())
             for col, default in OPTIONAL_COLS.items():
                 if col not in user_df.columns:
                     user_df[col] = default
 
-            # Derive market_cap if revenue exists and market_cap is missing/zero
+            # Derive market_cap from revenue if not present or all zero
             if user_df['market_cap'].eq(0).all():
                 user_df['market_cap'] = user_df['revenue'] * 12 * 3
                 user_df['share_price'] = user_df['market_cap'] / user_df['shares_outstanding']
 
             # Detect if this is a genuinely new file
             file_id = f"{uploaded_file.name}_{uploaded_file.size}"
-            is_new_file = st.session_state.get('last_file_id') != file_id
-
-            if is_new_file:
-                # Clear all caches so every page sees fresh data
+            if st.session_state.get('last_file_id') != file_id:
+                # Clear all caches so every page sees fresh data immediately
                 st.cache_data.clear()
                 for key in ['global_sectors', 'global_regions', 'global_companies']:
                     st.session_state.pop(key, None)
                 st.session_state['last_file_id'] = file_id
 
             st.session_state['uploaded_df'] = user_df
-            original_cols = list(user_df.columns)
             auto_filled = [c for c in OPTIONAL_COLS if c not in original_cols]
             st.sidebar.success(f"✅ **Live Data Active** — {len(user_df):,} rows | {user_df['company'].nunique()} companies")
             if auto_filled:
-                st.sidebar.caption(f"ℹ️ Auto-filled {len(auto_filled)} missing cols: {', '.join(auto_filled[:6])}{'...' if len(auto_filled)>6 else ''}")
+                st.sidebar.caption(f"ℹ️ Auto-filled {len(auto_filled)} missing cols with defaults")
 
     except Exception as e:
         st.sidebar.error(f"❌ Error reading file: {e}")
+
 else:
     # File was removed — reset to demo data
     if st.session_state.get('uploaded_df') is not None:
