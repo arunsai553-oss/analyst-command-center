@@ -5,7 +5,8 @@ import io
 import plotly.express as px
 from utils import (get_data, get_filtered_data, get_numeric_cols,
                    get_categorical_cols, get_date_col, auto_metric,
-                   auto_group, apply_chart_theme, format_value, infer_and_coerce_dates)
+                   auto_group, apply_chart_theme, format_value, infer_and_coerce_dates,
+                   clean_numeric_columns)
 
 st.set_page_config(
     page_title="Analyst Command Center",
