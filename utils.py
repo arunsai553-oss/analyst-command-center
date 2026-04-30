@@ -67,6 +67,24 @@ def auto_group(df):
             return c
     return cats[0] if cats else None
 
+def clean_numeric_columns(df):
+    """
+    Senior Analyst Mode: Aggressively cleans strings into floats.
+    Handles '$1,200.50', '50.5%', '1,000' etc.
+    """
+    df = df.copy()
+    for col in df.select_dtypes(include='object').columns:
+        # Check if column looks like it could be numeric (contains digits)
+        sample = df[col].head(50).astype(str)
+        if sample.str.contains(r'\d', regex=True).any():
+            cleaned = df[col].astype(str).str.replace(r'[$,%]', '', regex=True).str.replace(',', '')
+            # Try to convert
+            numeric_vals = pd.to_numeric(cleaned, errors='coerce')
+            # If >50% converted successfully, keep it as numeric
+            if numeric_vals.notna().mean() > 0.5:
+                df[col] = numeric_vals
+    return df
+
 def infer_and_coerce_dates(df):
     """
     Optimized date detection. Samples the first 100 rows to check for date formats,

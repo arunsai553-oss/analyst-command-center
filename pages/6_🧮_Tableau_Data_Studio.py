@@ -129,11 +129,27 @@ st.write("---")
 st.markdown("### 🧱 Advanced Drag-and-Drop Explorer")
 st.caption("Native Tableau-like experience. Drag fields from the left to columns/rows/color to build custom views.")
 
-@st.cache_resource
-def get_pyg_renderer(df_hashable):
-    # PyGWalker needs the actual dataframe
-    return StreamlitRenderer(df, spec="./gw_config.json", debug=False)
+# Detect if we need to reset the renderer (new dataset)
+current_data_id = id(df)
+if st.session_state.get('pyg_data_id') != current_data_id:
+    # Clear cache for the renderer specifically
+    st.session_state['pyg_data_id'] = current_data_id
+    if 'pyg_renderer' in st.session_state:
+        del st.session_state['pyg_renderer']
 
-# We use a trick to make the dataframe "hashable" or just rely on session state
-renderer = get_pyg_renderer(id(df))
-renderer.explorer()
+@st.cache_resource
+def get_pyg_renderer(_df):
+    try:
+        # Reset config to avoid KeyError: 'dimensions'
+        return StreamlitRenderer(_df, debug=False)
+    except Exception as e:
+        st.error(f"Visualizer Error: {e}")
+        return None
+
+try:
+    renderer = get_pyg_renderer(df)
+    if renderer:
+        renderer.explorer()
+except Exception as e:
+    st.error(f"Could not load Advanced Explorer for this dataset: {e}")
+    st.info("Try using the Quick Chart Builder above instead.")

@@ -55,7 +55,8 @@ if uploaded_file is not None:
             # Normalize column names: lowercase, strip, underscores
             user_df.columns = [c.strip().lower().replace(' ', '_').replace('-','_') for c in user_df.columns]
 
-            # Fast Date Inference
+            # Senior Analyst Cleaning
+            user_df = clean_numeric_columns(user_df)
             user_df = infer_and_coerce_dates(user_df)
 
             if user_df.empty or len(user_df.columns) == 0:
@@ -63,10 +64,12 @@ if uploaded_file is not None:
             else:
                 file_id = f"{uploaded_file.name}_{len(raw_bytes)}"
                 if st.session_state.get('last_file_id') != file_id:
+                    # NUCLEAR RESET: Clear everything that might hold old column names
                     st.cache_data.clear()
-                    # Reset filters on new upload
-                    for k in ['global_filter_col','global_filter_vals']:
-                        st.session_state[k] = None
+                    keys_to_clear = [k for k in st.session_state.keys() if k not in ['last_file_id', 'uploaded_df']]
+                    for k in keys_to_clear:
+                        st.session_state.pop(k, None)
+                    
                     st.session_state['last_file_id'] = file_id
                     st.rerun() # Force a clean refresh for the new dataset
 
