@@ -48,33 +48,36 @@ uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded_file is not None:
     try:
-        raw_bytes = uploaded_file.read()
-        user_df = pd.read_csv(io.BytesIO(raw_bytes))
+        with st.spinner("🚀 AI Analyzing Data Structure..."):
+            raw_bytes = uploaded_file.read()
+            user_df = pd.read_csv(io.BytesIO(raw_bytes))
 
-        # Normalize column names: lowercase, strip, underscores
-        user_df.columns = [c.strip().lower().replace(' ', '_').replace('-','_') for c in user_df.columns]
+            # Normalize column names: lowercase, strip, underscores
+            user_df.columns = [c.strip().lower().replace(' ', '_').replace('-','_') for c in user_df.columns]
 
-        # Auto-parse any columns that look like dates
-        user_df = infer_and_coerce_dates(user_df)
+            # Fast Date Inference
+            user_df = infer_and_coerce_dates(user_df)
 
-        if user_df.empty or len(user_df.columns) == 0:
-            st.sidebar.error("❌ File appears empty or unreadable.")
-        else:
-            file_id = f"{uploaded_file.name}_{len(raw_bytes)}"
-            if st.session_state.get('last_file_id') != file_id:
-                st.cache_data.clear()
-                for k in ['global_filter_col','global_filter_vals','last_file_id']:
-                    st.session_state.pop(k, None)
-                st.session_state['last_file_id'] = file_id
+            if user_df.empty or len(user_df.columns) == 0:
+                st.sidebar.error("❌ File appears empty or unreadable.")
+            else:
+                file_id = f"{uploaded_file.name}_{len(raw_bytes)}"
+                if st.session_state.get('last_file_id') != file_id:
+                    st.cache_data.clear()
+                    # Reset filters on new upload
+                    for k in ['global_filter_col','global_filter_vals']:
+                        st.session_state[k] = None
+                    st.session_state['last_file_id'] = file_id
+                    st.rerun() # Force a clean refresh for the new dataset
 
-            st.session_state['uploaded_df'] = user_df
-            n_num = len(get_numeric_cols(user_df))
-            n_cat = len(get_categorical_cols(user_df))
-            n_dt  = 1 if get_date_col(user_df) else 0
-            st.sidebar.success(
-                f"✅ **Loaded** — {len(user_df):,} rows × {len(user_df.columns)} cols\n\n"
-                f"📊 {n_num} numeric · 🏷️ {n_cat} categorical · 📅 {n_dt} date"
-            )
+                st.session_state['uploaded_df'] = user_df
+                n_num = len(get_numeric_cols(user_df))
+                n_cat = len(get_categorical_cols(user_df))
+                n_dt  = 1 if get_date_col(user_df) else 0
+                st.sidebar.success(
+                    f"✅ **Loaded** — {len(user_df):,} rows\n\n"
+                    f"📊 {n_num} metrics · 🏷️ {n_cat} segments"
+                )
     except Exception as e:
         st.sidebar.error(f"❌ Error: {e}")
 else:
@@ -142,8 +145,40 @@ st.markdown("### 📋 Dataset Overview")
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Total Rows", f"{len(df):,}")
 c2.metric("Columns", len(df.columns))
-c3.metric("Numeric Columns", len(num_cols))
-c4.metric("Categorical Columns", len(cat_cols))
+c3.metric("Numeric Metrics", len(num_cols))
+c4.metric("Categories", len(cat_cols))
+
+# ── AI Executive Summary (Senior AI Analyst Mode) ────────────────────────────
+with st.container():
+    st.markdown("""
+    <div style="background-color: #f8fafc; padding: 20px; border-left: 5px solid #3b82f6; border-radius: 8px; margin: 20px 0;">
+        <h3 style="margin-top:0; color: #1e3a8a;">🧠 AI Executive Summary</h3>
+        <p style="color: #64748b; font-size: 0.9rem;">Synthesizing strategic insights across all data dimensions...</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col_ai1, col_ai2 = st.columns(2)
+    with col_ai1:
+        if num_cols:
+            top_metric = auto_metric(df)
+            avg_val = df[top_metric].mean()
+            volatility = (df[top_metric].std() / avg_val * 100) if avg_val != 0 else 0
+            st.markdown(f"**📈 Primary Metric Analysis ({top_metric.title()}):**")
+            st.write(f"- Average performance is sitting at **{format_value(avg_val)}**.")
+            st.write(f"- Data volatility is **{volatility:.1f}%**, suggesting {'stable' if volatility < 20 else 'high'} fluctuation.")
+        else:
+            st.write("- No numeric metrics found to analyze.")
+
+    with col_ai2:
+        if cat_cols:
+            primary_cat = auto_group(df) or cat_cols[0]
+            top_segment = df[primary_cat].value_counts().idxmax()
+            coverage = (df[primary_cat].value_counts().max() / len(df)) * 100
+            st.markdown(f"**🏷️ Segment Concentration ({primary_cat.title()}):**")
+            st.write(f"- The dominant segment is **'{top_segment}'**.")
+            st.write(f"- It accounts for **{coverage:.1f}%** of the total dataset activity.")
+        else:
+            st.write("- No categorical segments found to analyze.")
 
 # ── Quick KPI metrics from numeric columns ───────────────────────────────────
 if num_cols:

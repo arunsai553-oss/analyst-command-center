@@ -68,15 +68,22 @@ def auto_group(df):
     return cats[0] if cats else None
 
 def infer_and_coerce_dates(df):
-    """Attempt to parse any columns that look like dates into datetime."""
+    """
+    Optimized date detection. Samples the first 100 rows to check for date formats,
+    avoiding the 'freeze' on large datasets.
+    """
     df = df.copy()
     for col in df.select_dtypes(include='object').columns:
-        if df[col].nunique() < len(df) * 0.95:  # skip high-cardinality text
-            continue
+        # Sample for speed
+        sample = df[col].head(100).dropna()
+        if sample.empty: continue
+        
         try:
-            parsed = pd.to_datetime(df[col], infer_datetime_format=True, errors='coerce')
-            if parsed.notna().mean() > 0.7:  # >70% parsed successfully
-                df[col] = parsed
+            # Try to parse the sample
+            parsed_sample = pd.to_datetime(sample, errors='coerce')
+            # If >80% of the sample looks like a date, convert the whole column
+            if parsed_sample.notna().mean() > 0.8:
+                df[col] = pd.to_datetime(df[col], errors='coerce')
         except:
             pass
     return df
